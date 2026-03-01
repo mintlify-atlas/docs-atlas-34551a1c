@@ -1,0 +1,132 @@
+---
+title: useWhen
+description: React hook that returns a promise that resolves when a condition becomes truthy
+---
+
+`useWhen` and `useWhenReady` are React hooks that create memoized promises which resolve when observables meet specific conditions.
+
+## Import
+
+```typescript
+import { useWhen, useWhenReady } from '@legendapp/state/react';
+```
+
+## useWhen
+
+Returns a promise that resolves when the predicate returns a truthy value.
+
+### Signature
+
+```typescript
+function useWhen<T>(predicate: Selector<T>): Promise<T>
+function useWhen<T, T2>(
+  predicate: Selector<T>,
+  effect: (value: T) => T2
+): Promise<T2>
+```
+
+### Parameters
+
+<ParamField path="predicate" type="Selector<T>" required>
+  A function that returns an observable value to check
+</ParamField>
+
+<ParamField path="effect" type="(value: T) => T2">
+  Optional function to run when the predicate becomes truthy
+</ParamField>
+
+### Returns
+
+Promise that resolves with the truthy value or the effect's return value.
+
+## useWhenReady
+
+Returns a promise that resolves when the predicate returns a non-null/undefined value.
+
+### Signature
+
+```typescript
+function useWhenReady<T>(predicate: Selector<T>): Promise<T>
+function useWhenReady<T, T2>(
+  predicate: Selector<T>,
+  effect: (value: T) => T2
+): Promise<T2>
+```
+
+## Examples
+
+### Basic usage
+
+```tsx
+import { observable } from '@legendapp/state';
+import { useWhen } from '@legendapp/state/react';
+
+const user$ = observable({ isAuthenticated: false });
+
+function Dashboard() {
+  useWhen(() => user$.isAuthenticated.get()).then(() => {
+    console.log('User is authenticated');
+  });
+
+  return <div>Dashboard</div>;
+}
+```
+
+### With effect
+
+```tsx
+function DataLoader() {
+  const data$ = useObservable(null);
+
+  useWhenReady(
+    () => data$.get(),
+    (data) => {
+      console.log('Data loaded:', data);
+      return data.length;
+    }
+  ).then((count) => {
+    console.log(`Loaded ${count} items`);
+  });
+
+  return <div>Loading...</div>;
+}
+```
+
+### Async component setup
+
+```tsx
+function Profile() {
+  const profile$ = useObservable(null);
+
+  useMount(async () => {
+    // Wait for user to be authenticated
+    await useWhen(() => user$.isAuthenticated.get());
+    
+    // Then load profile
+    const data = await fetchProfile();
+    profile$.set(data);
+  });
+
+  return <div>{profile$.name.get()}</div>;
+}
+```
+
+## Comparison
+
+| Feature | useWhen | useWhenReady |
+|---------|---------|-------------|
+| Resolves when | Value is truthy | Value is not null/undefined |
+| Useful for | Boolean conditions | Data loading |
+| Example | `isReady.get() === true` | `data.get() !== null` |
+
+## Notes
+
+- The promise is memoized and created only once during the component lifecycle
+- Similar to `when()` and `whenReady()` but React-aware
+- Useful for coordinating async operations with observable state
+
+## Related
+
+- [when()](/api/when) - Core when function
+- [useMount()](/api/react/use-mount) - Run effect on mount
+- [useObserve()](/api/react/use-observe) - Observe changes

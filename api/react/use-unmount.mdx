@@ -1,0 +1,109 @@
+---
+title: useUnmount
+description: React hook to run a function when the component unmounts
+---
+
+`useUnmount` is a React hook that runs a cleanup function when the component unmounts.
+
+## Import
+
+```typescript
+import { useUnmount } from '@legendapp/state/react';
+```
+
+## Signature
+
+```typescript
+function useUnmount(fn: () => void): void
+```
+
+## Parameters
+
+<ParamField path="fn" type="() => void" required>
+  Function to run when the component unmounts
+</ParamField>
+
+## Returns
+
+Void.
+
+## Examples
+
+### Basic usage
+
+```tsx
+import { useUnmount } from '@legendapp/state/react';
+
+function Component() {
+  useUnmount(() => {
+    console.log('Component unmounted');
+  });
+
+  return <div>Hello</div>;
+}
+```
+
+### Clean up subscriptions
+
+```tsx
+function ChatRoom({ roomId }) {
+  useMount(() => {
+    const subscription = subscribeToChatRoom(roomId);
+    return subscription;
+  });
+
+  useUnmount(() => {
+    console.log(`Leaving chat room ${roomId}`);
+    // Additional cleanup
+  });
+
+  return <div>Chat Room</div>;
+}
+```
+
+### Save state on unmount
+
+```tsx
+function Editor() {
+  const content$ = useObservable('');
+
+  useUnmount(() => {
+    // Save content to localStorage before unmounting
+    localStorage.setItem('draft', content$.get());
+  });
+
+  return (
+    <textarea
+      value={content$.get()}
+      onChange={(e) => content$.set(e.target.value)}
+    />
+  );
+}
+```
+
+### Analytics tracking
+
+```tsx
+function Page() {
+  const startTime = Date.now();
+
+  useUnmount(() => {
+    const timeSpent = Date.now() - startTime;
+    analytics.track('page_view_duration', { timeSpent });
+  });
+
+  return <div>Page content</div>;
+}
+```
+
+## Notes
+
+- Runs only once when the component unmounts
+- Internally uses `useMount` to return the cleanup function
+- The function cannot be async
+- Useful for cleanup operations like logging, saving state, or closing connections
+
+## Related
+
+- [useMount()](/api/react/use-mount) - Run function on mount
+- [useObserve()](/api/react/use-observe) - Observe observable changes with cleanup

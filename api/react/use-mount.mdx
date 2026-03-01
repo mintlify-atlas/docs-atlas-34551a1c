@@ -1,0 +1,114 @@
+---
+title: useMount
+description: React hook to run a function once when the component mounts
+---
+
+`useMount` is a React hook that runs a function once when the component mounts. It's a convenience wrapper around `useEffectOnce`.
+
+## Import
+
+```typescript
+import { useMount } from '@legendapp/state/react';
+```
+
+## Signature
+
+```typescript
+function useMount(
+  fn: () => (void | (() => void)) | Promise<void>
+): void
+```
+
+## Parameters
+
+<ParamField path="fn" type="() => void | (() => void) | Promise<void>" required>
+  Function to run on mount. Can return a cleanup function or be async.
+</ParamField>
+
+## Returns
+
+Void.
+
+## Examples
+
+### Basic usage
+
+```tsx
+import { useMount } from '@legendapp/state/react';
+
+function Component() {
+  useMount(() => {
+    console.log('Component mounted');
+  });
+
+  return <div>Hello</div>;
+}
+```
+
+### With cleanup
+
+```tsx
+function EventListener() {
+  useMount(() => {
+    const handler = () => console.log('Clicked');
+    window.addEventListener('click', handler);
+
+    // Return cleanup function
+    return () => {
+      window.removeEventListener('click', handler);
+    };
+  });
+
+  return <div>Listening for clicks</div>;
+}
+```
+
+### Async initialization
+
+```tsx
+function DataFetcher() {
+  const data$ = useObservable(null);
+
+  useMount(async () => {
+    const response = await fetch('/api/data');
+    const json = await response.json();
+    data$.set(json);
+  });
+
+  return <div>{data$.get()?.name}</div>;
+}
+```
+
+### Load data on mount
+
+```tsx
+function UserProfile() {
+  const profile$ = useObservable(null);
+  const loading$ = useObservable(true);
+
+  useMount(async () => {
+    try {
+      const user = await fetchUserProfile();
+      profile$.set(user);
+    } finally {
+      loading$.set(false);
+    }
+  });
+
+  if (loading$.get()) return <div>Loading...</div>;
+  return <div>{profile$.name.get()}</div>;
+}
+```
+
+## Notes
+
+- Runs only once when the component mounts
+- If the function is async, the cleanup return value is ignored
+- The function can return a cleanup function that runs when the component unmounts
+- Internally uses `useEffectOnce` with an empty dependency array
+
+## Related
+
+- [useUnmount()](/api/react/use-unmount) - Run function on unmount
+- [useObserve()](/api/react/use-observe) - Observe observable changes
+- [useEffectOnce](/api/react/use-effect-once) - Run effect once
