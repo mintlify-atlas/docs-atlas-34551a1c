@@ -1,0 +1,410 @@
+---
+title: synced()
+description: Create a synced observable with automatic persistence and remote sync
+---
+
+The `synced()` function creates an observable that automatically syncs with local persistence and remote data sources. It's a simplified wrapper around `syncObservable()` for common use cases.
+
+## Usage
+
+```ts
+import { synced } from '@legendapp/state/sync'
+
+const data$ = synced({
+  get: () => fetch('/api/data').then(r => r.json()),
+  set: ({ value }) => fetch('/api/data', {
+    method: 'POST',
+    body: JSON.stringify(value)
+  }),
+  persist: {
+    name: 'myData',
+    plugin: ObservablePersistLocalStorage
+  }
+})
+```
+
+## Parameters
+
+<ParamField path="options" type="SyncedOptions<TRemote, TLocal>" required>
+  Configuration for syncing behavior
+</ParamField>
+
+### SyncedOptions
+
+<ParamField path="get" type="(params: SyncedGetParams<TRemote>) => Promise<TRemote> | TRemote">
+  Function to fetch data from remote source
+  
+  ```ts
+  get: async ({ lastSync, value, onError }) => {
+    const response = await fetch('/api/data')
+    return response.json()
+  }
+  ```
+</ParamField>
+
+<ParamField path="set" type="(params: SyncedSetParams<TRemote>) => void | Promise<any>">
+  Function to save changes to remote source
+  
+  ```ts
+  set: async ({ value, changes }) => {
+    await fetch('/api/data', {
+      method: 'POST',
+      body: JSON.stringify(value)
+    })
+  }
+  ```
+</ParamField>
+
+<ParamField path="subscribe" type="(params: SyncedSubscribeParams<TRemote>) => (() => void) | void">
+  Function to subscribe to real-time updates
+  
+  ```ts
+  subscribe: ({ update }) => {
+    const unsubscribe = socket.on('data', (data) => {
+      update({ value: data })
+    })
+    return unsubscribe
+  }
+  ```
+</ParamField>
+
+<ParamField path="persist" type="PersistOptions">
+  Local persistence configuration. See [persist plugins](/api/persist-plugins/local-storage) for details.
+  
+  <Expandable title="PersistOptions fields">
+    <ResponseField name="name" type="string">
+      Unique identifier for this persisted data
+    </ResponseField>
+    <ResponseField name="plugin" type="ObservablePersistPlugin">
+      Plugin instance for persistence (localStorage, IndexedDB, etc.)
+    </ResponseField>
+    <ResponseField name="retrySync" type="boolean">
+      Whether to retry failed syncs on next load
+    </ResponseField>
+    <ResponseField name="transform" type="SyncTransform<T>">
+      Transform data before saving/loading
+    </ResponseField>
+    <ResponseField name="readonly" type="boolean">
+      If true, changes won't be persisted locally
+    </ResponseField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="initial" type="TLocal | (() => TLocal)">
+  Initial value before data loads
+</ParamField>
+
+<ParamField path="transform" type="SyncTransform<TLocal, TRemote>">
+  Transform data between local and remote formats
+  
+  <Expandable title="SyncTransform fields">
+    <ResponseField name="load" type="(value: TRemote, method: 'get' | 'set') => TLocal | Promise<TLocal>">
+      Transform remote data to local format
+    </ResponseField>
+    <ResponseField name="save" type="(value: TLocal) => TRemote | Promise<TRemote>">
+      Transform local data to remote format
+    </ResponseField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="mode" type="'set' | 'assign' | 'merge' | 'append' | 'prepend'" default="set">
+  How to apply remote data to the observable
+  - `set`: Replace entire value
+  - `assign`: Shallow merge (Object.assign)
+  - `merge`: Deep merge
+  - `append`: Add to end of array
+  - `prepend`: Add to beginning of array
+</ParamField>
+
+<ParamField path="debounceSet" type="number">
+  Debounce remote saves by this many milliseconds
+</ParamField>
+
+<ParamField path="syncMode" type="'auto' | 'manual'" default="auto">
+  - `auto`: Sync automatically when observable is accessed
+  - `manual`: Only sync when `sync()` is called
+</ParamField>
+
+<ParamField path="retry" type="RetryOptions">
+  Retry configuration for failed operations
+  
+  <Expandable title="RetryOptions fields">
+    <ResponseField name="infinite" type="boolean">
+      Retry indefinitely
+    </ResponseField>
+    <ResponseField name="times" type="number">
+      Maximum retry attempts
+    </ResponseField>
+    <ResponseField name="delay" type="number">
+      Delay between retries in milliseconds
+    </ResponseField>
+    <ResponseField name="backoff" type="'constant' | 'exponential'">
+      Backoff strategy for retries
+    </ResponseField>
+    <ResponseField name="maxDelay" type="number">
+      Maximum delay between retries
+    </ResponseField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="waitFor" type="Promise<any> | Observable<any> | (() => any)">
+  Wait for condition before syncing get/subscribe
+</ParamField>
+
+<ParamField path="waitForSet" type="(params: WaitForSetFnParams) => any">
+  Wait for condition before saving changes
+</ParamField>
+
+<ParamField path="onBeforeGet" type="(params) => void">
+  Called before fetching remote data
+  
+  ```ts
+  onBeforeGet: ({ value, lastSync, pendingChanges, cancel, clearPendingChanges, resetCache }) => {
+    // Optionally cancel the get
+    if (shouldSkip) {
+      cancel = true
+    }
+  }
+  ```
+</ParamField>
+
+<ParamField path="onBeforeSet" type="(params: { cancel: boolean }) => void">
+  Called before saving changes
+</ParamField>
+
+<ParamField path="onAfterSet" type="() => void">
+  Called after changes are saved
+</ParamField>
+
+<ParamField path="onError" type="(error: Error, params: SyncedErrorParams) => void">
+  Error handler for sync operations
+  
+  ```ts
+  onError: (error, { source, type, retry, revert }) => {
+    console.error(`${source} error:`, error)
+    // Optionally revert changes
+    if (shouldRevert) revert?.()
+  }
+  ```
+</ParamField>
+
+## Return Value
+
+Returns a `Synced<TLocal>` observable with the following characteristics:
+- Automatically loads from local persistence on first access
+- Syncs with remote data source based on `syncMode`
+- Tracks sync state via `syncState(observable)`
+- Persists changes locally and remotely
+
+## SyncedGetParams
+
+Parameters passed to the `get` function:
+
+<ResponseField name="node" type="NodeInfo">
+  Internal node information
+</ResponseField>
+
+<ResponseField name="value$" type="Observable<T>">
+  The observable being synced
+</ResponseField>
+
+<ResponseField name="refresh" type="() => void">
+  Function to trigger a refresh
+</ResponseField>
+
+<ResponseField name="value" type="any">
+  Current value of the observable
+</ResponseField>
+
+<ResponseField name="lastSync" type="number | undefined">
+  Timestamp of last successful sync
+</ResponseField>
+
+<ResponseField name="updateLastSync" type="(lastSync: number) => void">
+  Update the last sync timestamp
+</ResponseField>
+
+<ResponseField name="mode" type="GetMode">
+  How to apply the loaded data
+</ResponseField>
+
+<ResponseField name="onError" type="(error: Error, params: SyncedErrorParams) => void">
+  Error handler
+</ResponseField>
+
+<ResponseField name="retryNum" type="number">
+  Current retry attempt number
+</ResponseField>
+
+<ResponseField name="cancelRetry" type="boolean">
+  Set to true to cancel retrying
+</ResponseField>
+
+## SyncedSetParams
+
+Parameters passed to the `set` function:
+
+<ResponseField name="node" type="NodeInfo">
+  Internal node information
+</ResponseField>
+
+<ResponseField name="value$" type="Observable<T>">
+  The observable being synced
+</ResponseField>
+
+<ResponseField name="refresh" type="() => void">
+  Function to trigger a refresh
+</ResponseField>
+
+<ResponseField name="value" type="T">
+  The value to save
+</ResponseField>
+
+<ResponseField name="changes" type="ChangeWithPathStr[]">
+  Array of changes that triggered this save
+  
+  Each change contains:
+  - `path`: Array of keys to the changed value
+  - `pathTypes`: Types of each path segment
+  - `valueAtPath`: New value at this path
+  - `prevAtPath`: Previous value at this path
+  - `pathStr`: String representation of path
+</ResponseField>
+
+<ResponseField name="update" type="(params: UpdateSetFnParams) => void">
+  Update the observable with changes from the server
+  
+  ```ts
+  update({
+    value: serverResponse,
+    mode: 'merge',
+    changes: [/* optional changes */]
+  })
+  ```
+</ResponseField>
+
+<ResponseField name="onError" type="(error: Error, params: SyncedErrorParams) => void">
+  Error handler
+</ResponseField>
+
+<ResponseField name="retryNum" type="number">
+  Current retry attempt number
+</ResponseField>
+
+<ResponseField name="cancelRetry" type="boolean">
+  Set to true to cancel retrying
+</ResponseField>
+
+## SyncedSubscribeParams
+
+Parameters passed to the `subscribe` function:
+
+<ResponseField name="node" type="NodeInfo">
+  Internal node information
+</ResponseField>
+
+<ResponseField name="value$" type="Observable<T>">
+  The observable being synced
+</ResponseField>
+
+<ResponseField name="refresh" type="() => void">
+  Function to trigger a refresh
+</ResponseField>
+
+<ResponseField name="lastSync" type="number | undefined">
+  Timestamp of last successful sync
+</ResponseField>
+
+<ResponseField name="update" type="(params: UpdateFnParams) => void">
+  Update the observable with new data
+  
+  ```ts
+  update({
+    value: newData,
+    lastSync: Date.now(),
+    mode: 'merge'
+  })
+  ```
+</ResponseField>
+
+<ResponseField name="onError" type="(error: Error) => void">
+  Error handler
+</ResponseField>
+
+## Examples
+
+### Simple GET/SET
+
+```ts
+const user$ = synced({
+  get: () => fetch('/api/user').then(r => r.json()),
+  set: ({ value }) => fetch('/api/user', {
+    method: 'PUT',
+    body: JSON.stringify(value)
+  }),
+  initial: { name: '', email: '' },
+  persist: {
+    name: 'user',
+    plugin: ObservablePersistLocalStorage
+  }
+})
+```
+
+### With Transform
+
+```ts
+const data$ = synced({
+  get: () => api.getData(),
+  transform: {
+    load: (remote) => {
+      // Convert dates from strings
+      return {
+        ...remote,
+        createdAt: new Date(remote.createdAt)
+      }
+    },
+    save: (local) => {
+      // Convert dates to ISO strings
+      return {
+        ...local,
+        createdAt: local.createdAt.toISOString()
+      }
+    }
+  }
+})
+```
+
+### With Real-time Updates
+
+```ts
+const messages$ = synced({
+  get: () => api.getMessages(),
+  set: ({ value }) => api.sendMessage(value),
+  subscribe: ({ update }) => {
+    const unsubscribe = socket.on('message', (msg) => {
+      update({ value: [msg], mode: 'append' })
+    })
+    return () => unsubscribe()
+  },
+  initial: []
+})
+```
+
+### Function Shorthand
+
+```ts
+// If you only need get, you can pass a function directly
+const data$ = synced(() => fetch('/api/data').then(r => r.json()))
+
+// Equivalent to:
+const data$ = synced({
+  get: () => fetch('/api/data').then(r => r.json())
+})
+```
+
+## See Also
+
+- [syncObservable()](/api/sync/sync-observable) - Lower-level API for syncing existing observables
+- [configureObservableSync()](/api/sync/configure) - Global sync configuration
+- [Sync & Persistence Guide](/guides/sync-persistence)
+- [Persist Plugins](/api/persist-plugins/local-storage)

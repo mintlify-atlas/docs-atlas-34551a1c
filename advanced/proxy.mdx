@@ -1,0 +1,221 @@
+---
+title: Proxy Observables
+description: Create observables with dynamic property access (Deprecated)
+---
+
+<Warning>
+The `proxy()` function is deprecated and will be removed in v4. Use the `observable()` function with a factory function instead.
+</Warning>
+
+Proxy observables allow you to create observables where properties are dynamically created based on access patterns. This was useful for creating dictionary-like observables before the current factory function pattern was introduced.
+
+## Type Signatures
+
+```typescript
+function proxy<T, T2 = T>(
+  get: (key: string) => T,
+  set: (key: string, value: T2) => void
+): Observable<Record<string, T>>;
+
+function proxy<T extends Record<string, any>>(
+  get: <K extends keyof T>(key: K) => ObservableParam<T[K]>
+): Observable<T>;
+
+function proxy<T>(
+  get: (key: string) => ObservableParam<T>
+): Observable<Record<string, T>>;
+
+function proxy<T>(
+  get: (key: string) => T
+): Observable<Record<string, T>>;
+```
+
+## Migration to Factory Functions
+
+Instead of using `proxy()`, use `observable()` with a factory function:
+
+### Before (Deprecated)
+
+```typescript
+import { proxy } from '@legendapp/state';
+
+const cache$ = proxy(
+  (key) => fetchData(key),
+  (key, value) => saveData(key, value)
+);
+
+// Access creates observables on demand
+const user$ = cache$['user-123'];
+```
+
+### After (Recommended)
+
+```typescript
+import { observable, linked } from '@legendapp/state';
+
+const cache$ = observable((key: string) =>
+  linked({
+    get: () => fetchData(key),
+    set: ({ value }) => saveData(key, value),
+  })
+);
+
+// Access creates observables on demand
+const user$ = cache$['user-123'];
+```
+
+## How proxy() Worked
+
+The `proxy()` function created an observable that generates child observables dynamically:
+
+```typescript
+const store$ = proxy(
+  (key) => {
+    console.log('Accessing:', key);
+    return `value-${key}`;
+  }
+);
+
+const value = store$.someKey.get();
+// Logs: "Accessing: someKey"
+// Returns: "value-someKey"
+```
+
+## Common Use Cases
+
+### Dynamic Cache (Old Pattern)
+
+```typescript
+const userCache$ = proxy(
+  (userId) => fetchUser(userId)
+);
+
+// Each user ID creates a separate observable
+const user1$ = userCache$['user-1'];
+const user2$ = userCache$['user-2'];
+```
+
+### Modern Alternative
+
+```typescript
+const userCache$ = observable((userId: string) =>
+  linked({
+    get: async () => {
+      const response = await fetch(`/api/users/${userId}`);
+      return response.json();
+    },
+  })
+);
+
+const user1$ = userCache$['user-1'];
+const user2$ = userCache$['user-2'];
+```
+
+### Read-Only Proxy (Old Pattern)
+
+```typescript
+const computed$ = proxy((key) => {
+  return someCalculation(key);
+});
+```
+
+### Modern Alternative
+
+```typescript
+const computed$ = observable((key: string) =>
+  () => someCalculation(key)
+);
+```
+
+### Read-Write Proxy (Old Pattern)
+
+```typescript
+const settings$ = proxy(
+  (key) => localStorage.getItem(key),
+  (key, value) => localStorage.setItem(key, value)
+);
+
+settings$.theme.set('dark');
+const theme = settings$.theme.get();
+```
+
+### Modern Alternative
+
+```typescript
+const settings$ = observable((key: string) =>
+  linked({
+    get: () => localStorage.getItem(key),
+    set: ({ value }) => localStorage.setItem(key, value),
+  })
+);
+
+settings$.theme.set('dark');
+const theme = settings$.theme.get();
+```
+
+## Why It's Deprecated
+
+The `proxy()` function is deprecated because:
+
+1. **Redundant**: The same functionality can be achieved with `observable()` factory functions
+2. **Less flexible**: Factory functions work with more patterns and are more composable
+3. **API simplification**: Reducing the number of similar APIs makes Legend-State easier to learn
+4. **Better TypeScript support**: Factory functions have better type inference
+
+## Migration Guide
+
+### Simple Read-Only Proxy
+
+```typescript
+// Old
+const old$ = proxy((key) => getValue(key));
+
+// New
+const new$ = observable((key: string) => () => getValue(key));
+```
+
+### Read-Write Proxy
+
+```typescript
+// Old
+const old$ = proxy(
+  (key) => getValue(key),
+  (key, value) => setValue(key, value)
+);
+
+// New
+const new$ = observable((key: string) =>
+  linked({
+    get: () => getValue(key),
+    set: ({ value }) => setValue(key, value),
+  })
+);
+```
+
+### With Observables as Values
+
+```typescript
+// Old
+const old$ = proxy((key) => observable(getValue(key)));
+
+// New  
+const new$ = observable((key: string) => observable(getValue(key)));
+```
+
+## Timeline
+
+- **Current**: `proxy()` is deprecated but still functional
+- **v4**: `proxy()` will be removed entirely
+
+## Recommended Actions
+
+1. **Audit your codebase**: Search for `proxy(` to find all usages
+2. **Replace with factory functions**: Use the patterns shown above
+3. **Test thoroughly**: Ensure behavior is equivalent after migration
+4. **Update imports**: Remove `proxy` from your imports
+
+## Related
+
+- [Observable Factory Functions](/api/observable#factory-functions) - Modern way to create dynamic observables
+- [linked()](/advanced/linked-observables) - Two-way computed observables
+- [Computed Observables](/core/computed-observables) - Reactive computed values

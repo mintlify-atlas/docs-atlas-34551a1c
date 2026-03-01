@@ -1,0 +1,434 @@
+---
+title: observer() HOC
+description: Automatically track observables and re-render components efficiently
+---
+
+The `observer` higher-order component (HOC) wraps React components to automatically track observable access and re-render only when tracked observables change.
+
+## Overview
+
+`observer` eliminates the need to manually call hooks for every observable you want to track. Simply wrap your component with `observer` and call `.get()` on any observable - the component will automatically re-render when those observables change.
+
+```tsx
+function observer<P extends FC<any>>(component: P): P
+```
+
+## Basic Usage
+
+<Tabs>
+  <Tab title="Function Component">
+    ```jsx
+    import { observable } from '@legendapp/state'
+    import { observer } from '@legendapp/state/react'
+
+    const store$ = observable({
+        count: 0,
+        user: { name: 'John' }
+    })
+
+    const Counter = observer(function Counter() {
+        // Automatically tracks store$.count
+        return (
+            <div>
+                <div>Count: {store$.count.get()}</div>
+                <div>User: {store$.user.name.get()}</div>
+                <button onClick={() => store$.count.set(v => v + 1)}>
+                    Increment
+                </button>
+            </div>
+        )
+    })
+    ```
+  </Tab>
+  <Tab title="Arrow Function">
+    ```jsx
+    import { observable } from '@legendapp/state'
+    import { observer } from '@legendapp/state/react'
+
+    const count$ = observable(0)
+
+    const Counter = observer(() => {
+        return (
+            <div>
+                <div>Count: {count$.get()}</div>
+                <button onClick={() => count$.set(v => v + 1)}>
+                    Increment
+                </button>
+            </div>
+        )
+    })
+    ```
+  </Tab>
+  <Tab title="With TypeScript">
+    ```tsx
+    import { observable } from '@legendapp/state'
+    import { observer } from '@legendapp/state/react'
+    import { FC } from 'react'
+
+    interface CounterProps {
+        initialValue: number
+        onUpdate?: (value: number) => void
+    }
+
+    const Counter: FC<CounterProps> = observer(({ initialValue, onUpdate }) => {
+        const count$ = useObservable(initialValue)
+
+        useObserve(() => {
+            onUpdate?.(count$.get())
+        })
+
+        return (
+            <div>
+                <div>Count: {count$.get()}</div>
+                <button onClick={() => count$.set(v => v + 1)}>
+                    Increment
+                </button>
+            </div>
+        )
+    })
+    ```
+  </Tab>
+</Tabs>
+
+## How It Works
+
+When you wrap a component with `observer`:
+
+1. The component function is wrapped in a tracking context
+2. Any `.get()` calls on observables are automatically tracked
+3. When tracked observables change, the component re-renders
+4. Only the observables actually accessed during render are tracked
+
+```jsx
+import { observable } from '@legendapp/state'
+import { observer } from '@legendapp/state/react'
+
+const store$ = observable({
+    count: 0,
+    name: 'John',
+    email: 'john@example.com'
+})
+
+const UserInfo = observer(function UserInfo() {
+    // Only tracks store$.name - not count or email
+    return <div>Name: {store$.name.get()}</div>
+})
+
+// Changing count won't re-render UserInfo
+store$.count.set(1)  // No re-render
+
+// Changing name will re-render UserInfo
+store$.name.set('Jane')  // Re-renders
+```
+
+## With Memo
+
+The `observer` HOC automatically wraps components with `React.memo`, so you don't need to do it manually:
+
+```jsx
+import { observer } from '@legendapp/state/react'
+
+// This is already memoized
+const Component = observer(function Component({ id, name }) {
+    return <div>{name}</div>
+})
+
+// Don't need to do this:
+// const Component = memo(observer(function Component({ id, name }) {...}))
+```
+
+## With forwardRef
+
+`observer` works seamlessly with `forwardRef`:
+
+```jsx
+import { forwardRef } from 'react'
+import { observer } from '@legendapp/state/react'
+import { observable } from '@legendapp/state'
+
+const input$ = observable('')
+
+const Input = observer(forwardRef((props, ref) => {
+    return (
+        <input
+            ref={ref}
+            value={input$.get()}
+            onChange={(e) => input$.set(e.target.value)}
+        />
+    )
+}))
+```
+
+## Performance Benefits
+
+### Fine-Grained Tracking
+
+`observer` only re-renders when the specific observables accessed during render change:
+
+```jsx
+import { observable } from '@legendapp/state'
+import { observer } from '@legendapp/state/react'
+
+const store$ = observable({
+    users: [
+        { id: 1, name: 'John', age: 30 },
+        { id: 2, name: 'Jane', age: 25 }
+    ]
+})
+
+const UserName = observer(function UserName({ userId }) {
+    const user = store$.users.find(u => u.id.get() === userId)
+    // Only tracks the name of this specific user
+    return <div>{user?.name.get()}</div>
+})
+
+// Changing age won't re-render UserName
+store$.users[0].age.set(31)  // No re-render
+
+// Changing name will re-render UserName
+store$.users[0].name.set('Johnny')  // Re-renders
+```
+
+### Prevents Unnecessary Renders
+
+```jsx
+import { observable } from '@legendapp/state'
+import { observer } from '@legendapp/state/react'
+
+const count$ = observable(0)
+
+let renderCount = 0
+
+const ExpensiveComponent = observer(function ExpensiveComponent() {
+    renderCount++
+    const count = count$.get()
+
+    // Expensive computation only runs when count changes
+    const result = expensiveCalculation(count)
+
+    return <div>Result: {result} (Rendered {renderCount} times)</div>
+})
+```
+
+## Common Patterns
+
+### Global State
+
+```jsx
+import { observable } from '@legendapp/state'
+import { observer } from '@legendapp/state/react'
+
+// Global store
+const appStore$ = observable({
+    user: { id: 1, name: 'John' },
+    settings: { theme: 'dark' },
+    notifications: []
+})
+
+const Header = observer(function Header() {
+    return (
+        <header>
+            <div>Welcome, {appStore$.user.name.get()}</div>
+            <div>Theme: {appStore$.settings.theme.get()}</div>
+        </header>
+    )
+})
+
+const NotificationBadge = observer(function NotificationBadge() {
+    const count = appStore$.notifications.length
+    return count > 0 ? <span>{count}</span> : null
+})
+```
+
+### Computed Values
+
+```jsx
+import { observable } from '@legendapp/state'
+import { observer } from '@legendapp/state/react'
+
+const store$ = observable({
+    items: [
+        { name: 'Apple', price: 1.50, quantity: 3 },
+        { name: 'Banana', price: 0.80, quantity: 5 }
+    ],
+    tax: 0.08
+})
+
+const Cart = observer(function Cart() {
+    // Computed values are automatically tracked
+    const subtotal = store$.items
+        .get()
+        .reduce((sum, item) => sum + item.price * item.quantity, 0)
+
+    const tax = subtotal * store$.tax.get()
+    const total = subtotal + tax
+
+    return (
+        <div>
+            <div>Subtotal: ${subtotal.toFixed(2)}</div>
+            <div>Tax: ${tax.toFixed(2)}</div>
+            <div>Total: ${total.toFixed(2)}</div>
+        </div>
+    )
+})
+```
+
+### Conditional Rendering
+
+```jsx
+import { observable } from '@legendapp/state'
+import { observer } from '@legendapp/state/react'
+
+const auth$ = observable({
+    isLoggedIn: false,
+    user: null
+})
+
+const Dashboard = observer(function Dashboard() {
+    if (!auth$.isLoggedIn.get()) {
+        return <div>Please log in</div>
+    }
+
+    // This only tracks when isLoggedIn is true
+    return (
+        <div>
+            <h1>Welcome, {auth$.user.name.get()}</h1>
+        </div>
+    )
+})
+```
+
+## Combining with Hooks
+
+`observer` works perfectly with Legend-State hooks:
+
+```jsx
+import { observable } from '@legendapp/state'
+import { observer, useObservable, useObserve } from '@legendapp/state/react'
+
+const globalCount$ = observable(0)
+
+const Component = observer(function Component() {
+    const localCount$ = useObservable(0)
+
+    useObserve(() => {
+        console.log('Counts:', {
+            global: globalCount$.get(),
+            local: localCount$.get()
+        })
+    })
+
+    return (
+        <div>
+            <div>Global: {globalCount$.get()}</div>
+            <div>Local: {localCount$.get()}</div>
+            <button onClick={() => globalCount$.set(v => v + 1)}>
+                Increment Global
+            </button>
+            <button onClick={() => localCount$.set(v => v + 1)}>
+                Increment Local
+            </button>
+        </div>
+    )
+})
+```
+
+## Alternative: reactiveObserver
+
+`reactiveObserver` combines `observer` with `reactive`, allowing both automatic tracking and reactive props:
+
+```jsx
+import { observable } from '@legendapp/state'
+import { reactiveObserver } from '@legendapp/state/react'
+
+const name$ = observable('John')
+
+const Greeting = reactiveObserver(function Greeting({ $message }) {
+    // Tracks name$ automatically AND accepts reactive $message prop
+    return <div>{name$.get()} says: {$message}</div>
+})
+
+function App() {
+    const message$ = useObservable('Hello')
+    return <Greeting $message={message$} />
+}
+```
+
+## Best Practices
+
+<Tip>
+1. **Wrap at component level** - Wrap entire components, not individual JSX elements
+2. **Use for reading state** - Best when component primarily reads observable state
+3. **Combine with hooks** - Use `useObserve` for side effects within observer components
+4. **Trust automatic tracking** - Let observer handle dependency tracking instead of manual hooks
+</Tip>
+
+<Warning>
+**Don't use `.peek()` in observer components** - It won't track the observable:
+
+```jsx
+const Component = observer(function Component() {
+    // Bad - won't re-render when count changes
+    const count = count$.peek()
+
+    // Good - re-renders when count changes
+    const count = count$.get()
+
+    return <div>{count}</div>
+})
+```
+</Warning>
+
+## Performance Comparison
+
+Here's how `observer` compares to manual hooks:
+
+<CodeGroup>
+```jsx With observer
+import { observer } from '@legendapp/state/react'
+
+const Component = observer(function Component() {
+    return (
+        <div>
+            <div>{store$.name.get()}</div>
+            <div>{store$.email.get()}</div>
+            <div>{store$.age.get()}</div>
+        </div>
+    )
+})
+```
+
+```jsx Without observer (manual)
+import { useSelector } from '@legendapp/state/react'
+
+function Component() {
+    const name = useSelector(() => store$.name.get())
+    const email = useSelector(() => store$.email.get())
+    const age = useSelector(() => store$.age.get())
+
+    return (
+        <div>
+            <div>{name}</div>
+            <div>{email}</div>
+            <div>{age}</div>
+        </div>
+    )
+}
+```
+</CodeGroup>
+
+Both approaches have the same performance, but `observer` is more concise.
+
+## See Also
+
+<CardGroup cols={2}>
+  <Card title="React Hooks" icon="hook" href="/react/hooks">
+    Learn about useObservable, useSelector, and more
+  </Card>
+  <Card title="Reactive Components" icon="bolt" href="/react/reactive-components">
+    Pass observables as props with $ prefix
+  </Card>
+  <Card title="Fine-Grained Rendering" icon="gauge-high" href="/react/fine-grained-rendering">
+    Advanced patterns for optimal performance
+  </Card>
+</CardGroup>

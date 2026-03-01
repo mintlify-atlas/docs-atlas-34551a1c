@@ -1,0 +1,347 @@
+---
+title: batch(), beginBatch(), endBatch()
+description: Batch multiple state changes into a single update
+---
+
+## batch()
+
+Batches multiple state changes into a single update. All changes within the batch are applied atomically, and observers are only notified once at the end of the batch.
+
+### Signature
+
+```typescript
+function batch(fn: () => void): void
+```
+
+### Parameters
+
+<ParamField path="fn" type="() => void" required>
+  A function containing the state changes to batch. All observable modifications within this function will be batched together.
+</ParamField>
+
+### Examples
+
+#### Basic batching
+
+```typescript
+import { observable, observe, batch } from '@legendapp/state'
+
+const state$ = observable({ count: 0, total: 0 })
+
+let observeRuns = 0
+observe(() => {
+  observeRuns++
+  console.log('Count:', state$.count.get(), 'Total:', state$.total.get())
+})
+
+// Without batching - observe runs twice
+state$.count.set(1) // Observer runs: Count: 1 Total: 0
+state$.total.set(10) // Observer runs: Count: 1 Total: 10
+console.log('Observe runs:', observeRuns) // 3 (initial + 2 updates)
+
+observeRuns = 0
+
+// With batching - observe runs once
+batch(() => {
+  state$.count.set(2)
+  state$.total.set(20)
+})
+// Observer runs once: Count: 2 Total: 20
+console.log('Observe runs:', observeRuns) // 1
+```
+
+#### Batching array updates
+
+```typescript
+const items$ = observable<number[]>([])
+
+let updateCount = 0
+items$.onChange(() => {
+  updateCount++
+})
+
+// Without batching - notifies 3 times
+items$.push(1)
+items$.push(2)
+items$.push(3)
+console.log('Updates:', updateCount) // 3
+
+updateCount = 0
+
+// With batching - notifies once
+batch(() => {
+  items$.push(4)
+  items$.push(5)
+  items$.push(6)
+})
+console.log('Updates:', updateCount) // 1
+```
+
+#### Nested batches
+
+```typescript
+const state$ = observable({ a: 0, b: 0, c: 0 })
+
+let runs = 0
+state$.onChange(() => {
+  runs++
+})
+
+batch(() => {
+  state$.a.set(1)
+  
+  batch(() => {
+    state$.b.set(2)
+    state$.c.set(3)
+  })
+  
+  state$.a.set(4)
+})
+
+console.log('Observer runs:', runs) // 1 (all nested batches are merged)
+```
+
+---
+
+## beginBatch() and endBatch()
+
+Manually control batching with begin/end pairs. Useful when you can't use a callback function.
+
+### Signatures
+
+```typescript
+function beginBatch(): void
+function endBatch(force?: boolean): void
+```
+
+### Parameters
+
+<ParamField path="force" type="boolean" optional>
+  If `true`, forces the batch to complete immediately even if there are nested `beginBatch()` calls. Use with caution. Default: `false`
+</ParamField>
+
+### Examples
+
+#### Basic manual batching
+
+```typescript
+import { observable, beginBatch, endBatch } from '@legendapp/state'
+
+const state$ = observable({ x: 0, y: 0 })
+
+let runs = 0
+state$.onChange(() => {
+  runs++
+})
+
+beginBatch()
+state$.x.set(10)
+state$.y.set(20)
+endBatch()
+
+console.log('Observer runs:', runs) // 1
+```
+
+#### With try/finally for safety
+
+```typescript
+beginBatch()
+try {
+  state$.value.set(100)
+  
+  if (someCondition) {
+    throw new Error('Something went wrong')
+  }
+  
+  state$.other.set(200)
+} finally {
+  endBatch()
+}
+
+// Even if an error occurs, endBatch() is called
+```
+
+#### Async operations (advanced)
+
+```typescript
+beginBatch()
+
+state$.loading.set(true)
+
+fetch('/api/data')
+  .then(r => r.json())
+  .then(data => {
+    state$.data.set(data)
+    state$.loading.set(false)
+    endBatch()
+  })
+  .catch(error => {
+    state$.error.set(error)
+    state$.loading.set(false)
+    endBatch()
+  })
+
+// Note: For async operations, batch() is usually preferred
+```
+
+#### Nested manual batches
+
+```typescript
+const state$ = observable({ a: 0, b: 0, c: 0 })
+
+let runs = 0
+state$.onChange(() => {
+  runs++
+})
+
+beginBatch() // Level 1
+state$.a.set(1)
+
+  beginBatch() // Level 2
+  state$.b.set(2)
+  endBatch()   // Level 2 ends
+
+state$.c.set(3)
+endBatch()     // Level 1 ends - observer runs here
+
+console.log('Observer runs:', runs) // 1
+```
+
+#### Force ending a batch
+
+```typescript
+beginBatch()
+state$.value.set(1)
+
+  beginBatch()
+  state$.value.set(2)
+  
+  // Force end ignores nesting
+  endBatch(true)
+  
+  // Observer has already run at this point
+  
+  state$.value.set(3) // This triggers observer immediately
+endBatch()
+```
+
+### Best Practices
+
+<Tip>
+  Prefer `batch(() => { ... })` over manual `beginBatch()`/`endBatch()` when possible - it's safer and handles errors automatically.
+</Tip>
+
+```typescript
+// Preferred
+batch(() => {
+  state$.a.set(1)
+  state$.b.set(2)
+})
+
+// Only use manual batching when necessary
+beginBatch()
+try {
+  state$.a.set(1)
+  state$.b.set(2)
+} finally {
+  endBatch()
+}
+```
+
+<Warning>
+  Always pair `beginBatch()` with `endBatch()` using try/finally to prevent batch leaks that could cause memory issues.
+</Warning>
+
+```typescript
+// ❌ Bad - if error occurs, endBatch never runs
+beginBatch()
+riskyOperation()
+endBatch()
+
+// ✅ Good - endBatch always runs
+beginBatch()
+try {
+  riskyOperation()
+} finally {
+  endBatch()
+}
+```
+
+### When to use batching
+
+Batching is automatically beneficial when:
+
+1. **Multiple related updates** - Updating several fields that observers depend on
+```typescript
+batch(() => {
+  user$.firstName.set('John')
+  user$.lastName.set('Doe')
+  user$.age.set(30)
+})
+```
+
+2. **Array operations** - Multiple array modifications
+```typescript
+batch(() => {
+  items$.push(1)
+  items$.push(2)
+  items$.push(3)
+})
+```
+
+3. **Computed observables** - When multiple dependencies are updated
+```typescript
+const fullName$ = computed(() => {
+  return `${firstName$.get()} ${lastName$.get()}`
+})
+
+batch(() => {
+  firstName$.set('Jane')
+  lastName$.set('Smith')
+})
+// fullName$ only recomputes once
+```
+
+4. **React renders** - When using `@legendapp/state/react`, batching prevents multiple renders
+```typescript
+batch(() => {
+  state$.count.set(1)
+  state$.total.set(100)
+  state$.label.set('Updated')
+})
+// Component only re-renders once
+```
+
+### Performance Notes
+
+<Note>
+  Batching is lightweight and can be used freely. Legend-State automatically batches synchronous changes, so explicit batching is mainly useful for:
+  - Ensuring atomic updates
+  - Reducing observer/render counts
+  - Optimizing performance-critical code
+</Note>
+
+### Error Handling
+
+```typescript
+const state$ = observable({ value: 0, error: null })
+
+try {
+  batch(() => {
+    state$.value.set(10)
+    throw new Error('Something failed')
+    state$.value.set(20) // Never runs
+  })
+} catch (error) {
+  state$.error.set(error)
+}
+
+// Changes before the error are still applied
+console.log(state$.value.get()) // 10
+```
+
+### Internal Timeout Protection
+
+<Note>
+  Legend-State includes automatic timeout protection. If `endBatch()` is never called (due to an uncaught error), the batch will be forcibly completed after a timeout to prevent memory leaks.
+</Note>

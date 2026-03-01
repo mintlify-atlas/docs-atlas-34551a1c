@@ -1,0 +1,630 @@
+---
+title: "Local Persistence"
+description: "Save observable state to device storage with persistence plugins"
+---
+
+Legend-State's persistence plugins automatically save your observable state to local storage. Changes are saved incrementally, so only what changed is written to disk, making it extremely efficient even for large datasets.
+
+## Available Plugins
+
+### Web Plugins
+
+#### localStorage
+
+Simple key-value storage for web browsers:
+
+```ts
+import { ObservablePersistLocalStorage } from '@legendapp/state/persist-plugins/local-storage'
+import { synced } from '@legendapp/state/sync'
+import { observable } from '@legendapp/state'
+
+const settings$ = observable(synced({
+  persist: {
+    name: 'settings',
+    plugin: ObservablePersistLocalStorage
+  },
+  initial: { theme: 'dark', fontSize: 14 }
+}))
+```
+
+**Characteristics**:
+- Max storage: ~5-10MB
+- Synchronous API
+- String-only values (JSON stringified)
+- Persists across sessions
+- Simple key-value pairs
+
+#### sessionStorage
+
+Session-only storage that clears on tab close:
+
+```ts
+import { ObservablePersistSessionStorage } from '@legendapp/state/persist-plugins/local-storage'
+
+const tempData$ = observable(synced({
+  persist: {
+    name: 'tempData',
+    plugin: ObservablePersistSessionStorage
+  }
+}))
+```
+
+**Characteristics**:
+- Same as localStorage
+- Clears when tab/window closes
+- Separate storage per tab
+
+#### IndexedDB
+
+Structured database for large datasets:
+
+```ts
+import { observablePersistIndexedDB } from '@legendapp/state/persist-plugins/indexeddb'
+
+// Configure the database
+const idbPlugin = observablePersistIndexedDB({
+  databaseName: 'AppDB',
+  version: 1,
+  tableNames: ['users', 'posts', 'comments']
+})
+
+const users$ = observable(synced({
+  persist: {
+    name: 'users',
+    plugin: idbPlugin
+  },
+  initial: {}
+}))
+```
+
+**Configuration Options**:
+
+```ts
+observablePersistIndexedDB({
+  databaseName: 'MyApp', // Required
+  version: 1, // Required: increment to trigger upgrades
+  tableNames: ['table1', 'table2'], // Tables to create
+  deleteTableNames: ['oldTable'], // Tables to delete on upgrade
+  onUpgradeNeeded: (event: IDBVersionChangeEvent) => {
+    // Custom upgrade logic
+    const db = event.target.result
+    // Manually create/modify tables
+  }
+})
+```
+
+**Advanced IndexedDB Usage**:
+
+```ts
+// Use prefixID for multiple instances per table
+const userData$ = observable(synced({
+  persist: {
+    name: 'users',
+    plugin: idbPlugin,
+    indexedDB: {
+      prefixID: 'currentUser', // Namespace within table
+      itemID: 'profile' // Specific item key
+    }
+  }
+}))
+```
+
+**Characteristics**:
+- Max storage: Hundreds of MBs to GBs
+- Asynchronous API
+- Structured data with indexes
+- Best for large datasets
+- Automatic ID-based storage
+
+### React Native Plugins
+
+#### MMKV
+
+Fast, encrypted key-value storage for React Native:
+
+```ts
+import { observablePersistMMKV } from '@legendapp/state/persist-plugins/mmkv'
+
+// Configure MMKV plugin
+const mmkvPlugin = observablePersistMMKV({
+  id: 'AppStorage'
+})
+
+const state$ = observable(synced({
+  persist: {
+    name: 'userData',
+    plugin: mmkvPlugin
+  }
+}))
+```
+
+**Configuration Options**:
+
+```ts
+observablePersistMMKV({
+  id: 'AppStorage', // Storage instance ID
+  encryptionKey: 'my-encryption-key', // Optional encryption
+  path: '/custom/path' // Custom storage path
+})
+
+// Per-observable MMKV config
+const data$ = observable(synced({
+  persist: {
+    name: 'data',
+    plugin: mmkvPlugin,
+    mmkv: { id: 'SecureStorage', encryptionKey: 'secret' }
+  }
+}))
+```
+
+**Characteristics**:
+- Extremely fast (faster than AsyncStorage)
+- Encryption support
+- Synchronous API
+- Up to 1MB per value
+- Optimized for React Native
+
+<Info>
+MMKV is the recommended storage for React Native apps due to its performance and encryption capabilities.
+</Info>
+
+#### AsyncStorage
+
+Standard async key-value storage:
+
+```ts
+import AsyncStorage from '@react-native-async-storage/async-storage'
+import { ObservablePersistAsyncStorage } from '@legendapp/state/persist-plugins/async-storage'
+
+const asyncPlugin = new ObservablePersistAsyncStorage({
+  AsyncStorage,
+  preload: true // Load all data at initialization
+})
+
+const settings$ = observable(synced({
+  persist: {
+    name: 'settings',
+    plugin: asyncPlugin
+  }
+}))
+```
+
+**Configuration Options**:
+
+```ts
+new ObservablePersistAsyncStorage({
+  AsyncStorage: AsyncStorage, // Required: AsyncStorage instance
+  preload: true, // Preload all keys at init
+  // OR
+  preload: ['key1', 'key2'] // Preload specific keys only
+})
+```
+
+**Characteristics**:
+- Asynchronous API
+- Standard React Native storage
+- Slower than MMKV
+- Good compatibility
+
+#### Expo SQLite
+
+SQLite database for Expo apps:
+
+```ts
+import { observablePersistExpoSQLite } from '@legendapp/state/persist-plugins/expo-sqlite'
+
+const sqlitePlugin = observablePersistExpoSQLite({
+  database: 'app.db'
+})
+
+const data$ = observable(synced({
+  persist: {
+    name: 'data',
+    plugin: sqlitePlugin
+  }
+}))
+```
+
+**Characteristics**:
+- Full SQL database
+- Complex queries support
+- Relational data
+- Good for structured data
+
+## Global Plugin Configuration
+
+Set a default plugin for all synced observables:
+
+```ts
+import { configureObservableSync } from '@legendapp/state/sync'
+import { ObservablePersistLocalStorage } from '@legendapp/state/persist-plugins/local-storage'
+
+configureObservableSync({
+  persist: {
+    plugin: ObservablePersistLocalStorage
+  }
+})
+
+// Now all synced observables use localStorage by default
+const data$ = observable(synced({
+  persist: { name: 'data' } // No need to specify plugin
+}))
+```
+
+**Global Options**:
+
+```ts
+configureObservableSync({
+  persist: {
+    plugin: ObservablePersistLocalStorage,
+    onGetError: (error) => {
+      console.error('Failed to load from cache:', error)
+    },
+    onSetError: (error) => {
+      console.error('Failed to save to cache:', error)
+    }
+  }
+})
+```
+
+## Persistence Features
+
+### Automatic Saving
+
+Changes are saved automatically with no manual intervention:
+
+```ts
+const state$ = observable(synced({
+  persist: { name: 'state' },
+  initial: { count: 0 }
+}))
+
+// Automatically saved to storage
+state$.count.set(42)
+```
+
+### Incremental Updates
+
+Only changed values are written to storage:
+
+```ts
+const user$ = observable(synced({
+  persist: { name: 'user' },
+  initial: { name: '', email: '', age: 0 }
+}))
+
+// Only 'name' field is written to storage
+user$.name.set('Alice')
+```
+
+### Transform Cached Data
+
+Transform data when loading/saving to storage:
+
+```ts
+const data$ = observable(synced({
+  persist: {
+    name: 'data',
+    transform: {
+      load: (value) => {
+        // Deserialize dates
+        return {
+          ...value,
+          lastSeen: new Date(value.lastSeen)
+        }
+      },
+      save: (value) => {
+        // Serialize dates
+        return {
+          ...value,
+          lastSeen: value.lastSeen.toISOString()
+        }
+      }
+    }
+  }
+}))
+```
+
+### Read-Only Cache
+
+Load from cache but don't save changes:
+
+```ts
+const data$ = observable(synced({
+  persist: {
+    name: 'data',
+    readonly: true // Won't write to storage
+  },
+  get: async () => fetchFromServer()
+}))
+```
+
+## Metadata Storage
+
+Each persisted observable has associated metadata:
+
+```ts
+interface PersistMetadata {
+  lastSync?: number // Timestamp of last successful sync
+  pending?: PendingChanges // Unsaved changes for retry
+}
+```
+
+Metadata is stored separately with suffix `__m`:
+
+```ts
+// Data stored at key: "userData"
+// Metadata stored at key: "userData__m"
+const userData$ = observable(synced({
+  persist: { name: 'userData', retrySync: true }
+}))
+```
+
+## Retry Sync
+
+Enable `retrySync` to persist pending changes across app restarts:
+
+```ts
+const data$ = observable(synced({
+  persist: {
+    name: 'data',
+    retrySync: true // Critical for reliability
+  },
+  set: async ({ value }) => saveToServer(value)
+}))
+```
+
+**How it works**:
+
+<Steps>
+  <Step title="Change Made">
+    User modifies data, change saved to local cache
+  </Step>
+  <Step title="Mark Pending">
+    Change is marked as pending in metadata
+  </Step>
+  <Step title="Sync Attempt">
+    Attempt to sync to remote server
+  </Step>
+  <Step title="App Closes">
+    If sync fails and app closes, pending changes are still in metadata
+  </Step>
+  <Step title="App Reopens">
+    On restart, Legend-State loads pending changes from metadata
+  </Step>
+  <Step title="Retry Sync">
+    Pending changes are automatically retried
+  </Step>
+</Steps>
+
+<Warning>
+Always use `retrySync: true` for critical data that must be saved. Without it, failed syncs are lost on app restart.
+</Warning>
+
+## Managing Cache
+
+### Clear Cache
+
+Manually clear persisted data:
+
+```ts
+import { syncState } from '@legendapp/state'
+
+const data$ = observable(synced({ persist: { name: 'data' } }))
+
+// Clear cache and metadata
+await syncState(data$).resetPersistence()
+```
+
+### Check Cache Status
+
+```ts
+const state$ = syncState(data$)
+
+// Has cache loaded?
+if (state$.isPersistLoaded.get()) {
+  console.log('Cache loaded')
+}
+
+// Number of pending local loads
+state$.numPendingLocalLoads.get()
+```
+
+## Best Practices
+
+### Choose the Right Plugin
+
+<AccordionGroup>
+  <Accordion title="Web: Small Data (<5MB)">
+    Use **localStorage** for simple settings, preferences, and small state.
+  </Accordion>
+  
+  <Accordion title="Web: Large Data or Complex Queries">
+    Use **IndexedDB** for large datasets, offline-first apps, or when you need structured storage.
+  </Accordion>
+  
+  <Accordion title="React Native: Performance Critical">
+    Use **MMKV** for fast, encrypted storage. Best choice for most React Native apps.
+  </Accordion>
+  
+  <Accordion title="React Native: Standard">
+    Use **AsyncStorage** for compatibility or when MMKV isn't available.
+  </Accordion>
+  
+  <Accordion title="Complex Relational Data">
+    Use **SQLite** (Expo or custom) when you need SQL queries and relations.
+  </Accordion>
+</AccordionGroup>
+
+### Unique Names
+
+<Warning>
+Always use unique `name` values for each synced observable to prevent cache collisions.
+</Warning>
+
+```ts
+// Good
+const users$ = synced({ persist: { name: 'users' } })
+const posts$ = synced({ persist: { name: 'posts' } })
+
+// Bad - same name will cause conflicts
+const data1$ = synced({ persist: { name: 'data' } })
+const data2$ = synced({ persist: { name: 'data' } })
+```
+
+### Initialize Plugins Once
+
+```ts
+// Create plugin instance once
+const idbPlugin = observablePersistIndexedDB({
+  databaseName: 'MyApp',
+  version: 1,
+  tableNames: ['users', 'posts']
+})
+
+// Reuse across observables
+const users$ = synced({ persist: { name: 'users', plugin: idbPlugin } })
+const posts$ = synced({ persist: { name: 'posts', plugin: idbPlugin } })
+```
+
+### Handle Errors
+
+```ts
+import { configureObservableSync } from '@legendapp/state/sync'
+
+configureObservableSync({
+  persist: {
+    plugin: ObservablePersistLocalStorage,
+    onGetError: (error) => {
+      // Handle cache load errors
+      console.error('Cache load failed:', error)
+      // Maybe clear corrupted cache
+    },
+    onSetError: (error) => {
+      // Handle cache save errors
+      console.error('Cache save failed:', error)
+      // Maybe notify user storage is full
+    }
+  }
+})
+```
+
+### Migrate Data
+
+Handle schema changes with transforms:
+
+```ts
+const data$ = observable(synced({
+  persist: {
+    name: 'data',
+    transform: {
+      load: (value) => {
+        // Migrate old format to new
+        if (!value.version) {
+          return {
+            ...value,
+            version: 2,
+            newField: 'default'
+          }
+        }
+        return value
+      }
+    }
+  }
+}))
+```
+
+## Platform-Specific Examples
+
+### Web App
+
+```ts
+import { configureObservableSync } from '@legendapp/state/sync'
+import { observablePersistIndexedDB } from '@legendapp/state/persist-plugins/indexeddb'
+
+// Configure IndexedDB for large data
+const idbPlugin = observablePersistIndexedDB({
+  databaseName: 'MyWebApp',
+  version: 1,
+  tableNames: ['settings', 'cache', 'offline-queue']
+})
+
+configureObservableSync({
+  persist: { plugin: idbPlugin }
+})
+```
+
+### React Native App
+
+```ts
+import { configureObservableSync } from '@legendapp/state/sync'
+import { observablePersistMMKV } from '@legendapp/state/persist-plugins/mmkv'
+
+// Configure MMKV for fast, encrypted storage
+const mmkvPlugin = observablePersistMMKV({
+  id: 'AppStorage',
+  encryptionKey: process.env.ENCRYPTION_KEY
+})
+
+configureObservableSync({
+  persist: { plugin: mmkvPlugin }
+})
+```
+
+### Expo App
+
+```ts
+import AsyncStorage from '@react-native-async-storage/async-storage'
+import { ObservablePersistAsyncStorage } from '@legendapp/state/persist-plugins/async-storage'
+import { configureObservableSync } from '@legendapp/state/sync'
+
+const asyncPlugin = new ObservablePersistAsyncStorage({
+  AsyncStorage,
+  preload: true
+})
+
+configureObservableSync({
+  persist: { plugin: asyncPlugin }
+})
+```
+
+## Troubleshooting
+
+### Storage Full Error
+
+```ts
+configureObservableSync({
+  persist: {
+    onSetError: (error) => {
+      if (error.message.includes('QuotaExceededError')) {
+        // Storage is full
+        alert('Device storage is full. Please free up space.')
+      }
+    }
+  }
+})
+```
+
+### Corrupted Cache
+
+```ts
+import { syncState } from '@legendapp/state'
+
+const data$ = observable(synced({
+  persist: { name: 'data' },
+  onError: async (error) => {
+    if (error.message.includes('parse')) {
+      // Cache corrupted, clear it
+      await syncState(data$).resetPersistence()
+      // Reload from server
+      await syncState(data$).sync()
+    }
+  }
+}))
+```
+
+## See Also
+
+- [synced() Function](/sync/synced) - Create synced observables
+- [Remote Sync](/sync/remote-sync) - Sync with backends
+- [syncState](/api/sync-state) - Monitor persistence status

@@ -1,0 +1,212 @@
+---
+title: observable() and observablePrimitive()
+description: Create observable state containers
+---
+
+## observable()
+
+Creates an observable object that tracks changes and notifies listeners. Observables can contain any type of value including primitives, objects, arrays, Maps, Sets, and more.
+
+### Signatures
+
+```typescript
+function observable<T>(): Observable<T | undefined>
+function observable<T>(
+    value: Promise<RecursiveValueOrFunction<T>> | (() => RecursiveValueOrFunction<T>) | RecursiveValueOrFunction<T>
+): Observable<T>
+function observable<T>(value: T): Observable<T>
+```
+
+### Parameters
+
+<ParamField path="value" type="T | Promise<T> | () => T" optional>
+  The initial value for the observable. Can be:
+  - A direct value of any type
+  - A function that returns a value (lazy evaluation)
+  - A Promise that resolves to a value
+  - Another observable (creates a linked observable)
+  
+  If omitted, the observable is initialized as `undefined`.
+</ParamField>
+
+### Returns
+
+<ResponseField name="Observable<T>" type="Observable<T>">
+  An observable proxy object with the following methods:
+  
+  - `get()` - Get the current value and track for changes
+  - `peek()` - Get the current value without tracking
+  - `set(value)` - Set a new value
+  - `onChange(callback)` - Listen for changes
+  - `delete()` - Delete the observable value
+  
+  For objects and arrays, child properties are also observable.
+</ResponseField>
+
+### Examples
+
+#### Basic usage
+
+```typescript
+import { observable } from '@legendapp/state'
+
+// Create observable with initial value
+const count$ = observable(0)
+
+// Get value
+console.log(count$.get()) // 0
+
+// Set value
+count$.set(1)
+```
+
+#### Observable objects
+
+```typescript
+const user$ = observable({
+  name: 'John',
+  age: 30
+})
+
+// Access nested properties
+console.log(user$.name.get()) // 'John'
+
+// Update nested properties
+user$.name.set('Jane')
+user$.age.set(31)
+```
+
+#### Observable arrays
+
+```typescript
+const items$ = observable([1, 2, 3])
+
+// Access array elements
+console.log(items$[0].get()) // 1
+
+// Modify array
+items$.push(4)
+items$[1].set(10)
+```
+
+#### Lazy initialization
+
+```typescript
+// Function is called only when first accessed
+const data$ = observable(() => {
+  console.log('Initializing...')
+  return { value: 42 }
+})
+```
+
+#### Promise values
+
+```typescript
+const asyncData$ = observable(fetch('/api/data').then(r => r.json()))
+
+// Observable will be undefined until promise resolves
+console.log(asyncData$.get()) // undefined
+
+// Later, after promise resolves:
+console.log(asyncData$.get()) // { ... resolved data }
+```
+
+#### Empty observable
+
+```typescript
+interface User {
+  name: string
+  age: number
+}
+
+// Create typed observable without initial value
+const user$ = observable<User>()
+
+console.log(user$.get()) // undefined
+
+user$.set({ name: 'John', age: 30 })
+```
+
+---
+
+## observablePrimitive()
+
+Creates an observable for primitive values that cannot have child properties. This is more memory-efficient for primitive values since it doesn't create a proxy.
+
+### Signatures
+
+```typescript
+function observablePrimitive<T>(value: Promise<T>): ObservablePrimitive<T>
+function observablePrimitive<T>(value?: T): ObservablePrimitive<T>
+```
+
+### Parameters
+
+<ParamField path="value" type="T | Promise<T>" optional>
+  The initial primitive value. Can be:
+  - A primitive value (string, number, boolean, null, undefined)
+  - A Promise that resolves to a primitive value
+  
+  If omitted, the observable is initialized as `undefined`.
+</ParamField>
+
+### Returns
+
+<ResponseField name="ObservablePrimitive<T>" type="ObservablePrimitive<T>">
+  An observable primitive with the following methods:
+  
+  - `get()` - Get the current value and track for changes
+  - `peek()` - Get the current value without tracking
+  - `set(value)` - Set a new value
+  - `onChange(callback)` - Listen for changes
+  - `delete()` - Delete the observable value
+  
+  Unlike `Observable<T>`, does not support accessing child properties.
+</ResponseField>
+
+### Examples
+
+#### Basic primitive
+
+```typescript
+import { observablePrimitive } from '@legendapp/state'
+
+const count$ = observablePrimitive(0)
+
+count$.set(5)
+console.log(count$.get()) // 5
+```
+
+#### Boolean with toggle
+
+```typescript
+const isActive$ = observablePrimitive(false)
+
+// ObservablePrimitive<boolean> has a toggle() method
+isActive$.toggle()
+console.log(isActive$.get()) // true
+```
+
+#### Use with Promise
+
+```typescript
+const userId$ = observablePrimitive(
+  fetch('/api/user/id').then(r => r.text())
+)
+```
+
+### When to use observablePrimitive()
+
+- **Use `observablePrimitive()`** when:
+  - You only need to store primitive values (string, number, boolean, etc.)
+  - You want slightly better performance and memory usage
+  - You don't need to access child properties
+
+- **Use `observable()`** when:
+  - You need to store objects or arrays
+  - You might need child property access
+  - You're not sure about the type (observable handles both cases)
+
+<Note>
+  For most use cases, `observable()` is the recommended choice as it handles all types seamlessly.
+</Note>

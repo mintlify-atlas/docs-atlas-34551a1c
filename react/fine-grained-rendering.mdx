@@ -1,0 +1,588 @@
+---
+title: Fine-Grained Rendering
+description: Advanced patterns and techniques for optimal React performance with Legend-State
+---
+
+Fine-grained rendering is Legend-State's superpower. It enables you to update only the exact parts of your UI that need to change, without re-rendering parent components. This leads to exceptional performance, especially in complex applications.
+
+## What is Fine-Grained Rendering?
+
+Fine-grained rendering means updating the DOM directly for specific values without triggering a full component re-render. Legend-State achieves this through reactive components and automatic dependency tracking.
+
+### Traditional React
+
+```jsx
+function Counter() {
+    const [count, setCount] = useState(0)
+
+    // Entire component re-renders on every count change
+    return (
+        <div>
+            <ExpensiveComponent />
+            <div>Count: {count}</div>
+            <button onClick={() => setCount(c => c + 1)}>+</button>
+        </div>
+    )
+}
+```
+
+### With Fine-Grained Rendering
+
+```jsx
+import { useObservable } from '@legendapp/state/react'
+import { Memo } from '@legendapp/state/react'
+
+function Counter() {
+    const count$ = useObservable(0)
+
+    // Component never re-renders! Only the Memo updates
+    return (
+        <div>
+            <ExpensiveComponent />
+            <div>Count: <Memo>{count$}</Memo></div>
+            <button onClick={() => count$.set(c => c + 1)}>+</button>
+        </div>
+    )
+}
+```
+
+## Techniques for Fine-Grained Rendering
+
+### 1. Using Memo Components
+
+The simplest approach - wrap observable values in `Memo`:
+
+```jsx
+import { observable } from '@legendapp/state'
+import { Memo } from '@legendapp/state/react'
+
+const state$ = observable({
+    user: { name: 'John', email: 'john@example.com' },
+    count: 0,
+    items: []
+})
+
+function Dashboard() {
+    // Dashboard never re-renders
+    return (
+        <div>
+            <h1>Welcome, <Memo>{state$.user.name}</Memo></h1>
+            <p>Email: <Memo>{state$.user.email}</Memo></p>
+            <p>Count: <Memo>{count$}</Memo></p>
+            <p>Items: <Memo>{() => state$.items.length}</Memo></p>
+        </div>
+    )
+}
+```
+
+### 2. Using observer with Granular Components
+
+Split components into smaller pieces, each wrapped with `observer`:
+
+```jsx
+import { observable } from '@legendapp/state'
+import { observer } from '@legendapp/state/react'
+
+const store$ = observable({
+    header: { title: 'Dashboard', subtitle: 'Welcome back' },
+    stats: { users: 100, posts: 500 },
+    activity: []
+})
+
+const Header = observer(function Header() {
+    // Only re-renders when header changes
+    return (
+        <header>
+            <h1>{store$.header.title.get()}</h1>
+            <p>{store$.header.subtitle.get()}</p>
+        </header>
+    )
+})
+
+const Stats = observer(function Stats() {
+    // Only re-renders when stats change
+    return (
+        <div>
+            <div>Users: {store$.stats.users.get()}</div>
+            <div>Posts: {store$.stats.posts.get()}</div>
+        </div>
+    )
+})
+
+const Activity = observer(function Activity() {
+    // Only re-renders when activity changes
+    return (
+        <ul>
+            {store$.activity.get().map(item => (
+                <li key={item.id}>{item.text}</li>
+            ))}
+        </ul>
+    )
+})
+
+function Dashboard() {
+    return (
+        <div>
+            <Header />
+            <Stats />
+            <Activity />
+        </div>
+    )
+}
+```
+
+### 3. Using Reactive Props
+
+Pass observables as props to reactive components:
+
+```jsx
+import { useObservable } from '@legendapp/state/react'
+import { Reactive } from '@legendapp/state/react'
+
+function ThemeableApp() {
+    const theme$ = useObservable({ color: 'blue', fontSize: 16 })
+
+    // Component never re-renders
+    return (
+        <Reactive.div
+            $style={() => ({
+                color: theme$.color.get(),
+                fontSize: theme$.fontSize.get()
+            })}
+        >
+            <Reactive.h1 $children={() => `Color: ${theme$.color.get()}`} />
+            
+            <button onClick={() => theme$.color.set('red')}>
+                Red
+            </button>
+            <button onClick={() => theme$.fontSize.set(20)}>
+                Bigger
+            </button>
+        </Reactive.div>
+    )
+}
+```
+
+### 4. Using For for Lists
+
+`For` component only updates changed list items:
+
+```jsx
+import { observable } from '@legendapp/state'
+import { For } from '@legendapp/state/react'
+import { observer } from '@legendapp/state/react'
+
+const todos$ = observable([
+    { id: 1, text: 'Learn Legend-State', done: false },
+    { id: 2, text: 'Build app', done: false },
+    { id: 3, text: 'Ship it', done: false }
+])
+
+let itemRenderCount = {}
+
+const TodoItem = observer(function TodoItem({ item$, id }) {
+    itemRenderCount[id] = (itemRenderCount[id] || 0) + 1
+
+    return (
+        <div>
+            <input
+                type="checkbox"
+                checked={item$.done.get()}
+                onChange={(e) => item$.done.set(e.target.checked)}
+            />
+            <span>{item$.text.get()}</span>
+            <small>(rendered {itemRenderCount[id]} times)</small>
+        </div>
+    )
+})
+
+function TodoList() {
+    return (
+        <div>
+            <For each={todos$} item={TodoItem} />
+            <button onClick={() => todos$.push({ 
+                id: Date.now(), 
+                text: 'New task', 
+                done: false 
+            })}>
+                Add Todo
+            </button>
+        </div>
+    )
+}
+
+// Toggling todo #1 only re-renders that item
+// Adding a new todo only renders the new item
+```
+
+## Advanced Patterns
+
+### Combining Techniques
+
+Mix and match techniques for optimal performance:
+
+```jsx
+import { observable } from '@legendapp/state'
+import { observer, useObservable } from '@legendapp/state/react'
+import { Memo, For, Show } from '@legendapp/state/react'
+
+const globalData$ = observable({
+    user: { name: 'John', isAdmin: false },
+    items: []
+})
+
+const Header = observer(function Header() {
+    return (
+        <header>
+            <h1>Welcome, <Memo>{globalData$.user.name}</Memo></h1>
+            <Show if={() => globalData$.user.isAdmin.get()}>
+                <AdminBadge />
+            </Show>
+        </header>
+    )
+})
+
+const ItemList = observer(function ItemList() {
+    const filter$ = useObservable('')
+
+    return (
+        <div>
+            <input 
+                value={filter$.get()}
+                onChange={(e) => filter$.set(e.target.value)}
+            />
+            <For each={() => {
+                const items = globalData$.items.get()
+                const filter = filter$.get().toLowerCase()
+                return items.filter(item => 
+                    item.name.toLowerCase().includes(filter)
+                )
+            }}>
+                {(item$) => <div>{item$.name.get()}</div>}
+            </For>
+        </div>
+    )
+})
+```
+
+### Computed Values without Re-renders
+
+```jsx
+import { observable } from '@legendapp/state'
+import { Memo } from '@legendapp/state/react'
+
+const cart$ = observable({
+    items: [
+        { name: 'Apple', price: 1.50, quantity: 3 },
+        { name: 'Banana', price: 0.80, quantity: 5 }
+    ],
+    tax: 0.08
+})
+
+// Computed observables
+const subtotal$ = observable(() => {
+    return cart$.items.get().reduce((sum, item) => 
+        sum + item.price * item.quantity, 0
+    )
+})
+
+const total$ = observable(() => {
+    const sub = subtotal$.get()
+    return sub + (sub * cart$.tax.get())
+})
+
+function Cart() {
+    // Never re-renders, but displays live computed values
+    return (
+        <div>
+            <div>Subtotal: $<Memo>{() => subtotal$.get().toFixed(2)}</Memo></div>
+            <div>Tax (8%): $<Memo>{() => (subtotal$.get() * cart$.tax.get()).toFixed(2)}</Memo></div>
+            <div>Total: $<Memo>{() => total$.get().toFixed(2)}</Memo></div>
+        </div>
+    )
+}
+```
+
+### Selective Re-rendering
+
+Control exactly which parts re-render:
+
+```jsx
+import { observable } from '@legendapp/state'
+import { observer, useSelector } from '@legendapp/state/react'
+import { Memo } from '@legendapp/state/react'
+
+const state$ = observable({
+    fastChanging: 0,  // Updates every 100ms
+    slowChanging: 0,  // Updates every 5s
+    static: 'Hello'
+})
+
+const FastDisplay = observer(function FastDisplay() {
+    // Re-renders on every fastChanging update
+    return <div>Fast: {state$.fastChanging.get()}</div>
+})
+
+function SlowDisplay() {
+    // Re-renders only on slowChanging updates
+    const value = useSelector(() => state$.slowChanging.get())
+    return <div>Slow: {value}</div>
+}
+
+function MixedDisplay() {
+    // Never re-renders
+    return (
+        <div>
+            <div>Static: {state$.static}</div>
+            <div>Fast: <Memo>{state$.fastChanging}</Memo></div>
+            <div>Slow: <Memo>{state$.slowChanging}</Memo></div>
+        </div>
+    )
+}
+```
+
+### Form Optimization
+
+Handle forms without re-rendering on every keystroke:
+
+```jsx
+import { useObservable } from '@legendapp/state/react'
+import { Reactive } from '@legendapp/state/react'
+
+function OptimizedForm() {
+    const form$ = useObservable({
+        name: '',
+        email: '',
+        bio: ''
+    })
+
+    const handleSubmit = () => {
+        console.log('Form data:', form$.get())
+    }
+
+    // Component never re-renders during typing!
+    return (
+        <form onSubmit={handleSubmit}>
+            <Reactive.input
+                $value={form$.name}
+                placeholder="Name"
+            />
+            <Reactive.input
+                $value={form$.email}
+                placeholder="Email"
+            />
+            <Reactive.textarea
+                $value={form$.bio}
+                placeholder="Bio"
+            />
+            <button type="submit">Submit</button>
+        </form>
+    )
+}
+```
+
+<Note>
+For two-way binding with inputs, you can also use the `reactive()` HOC with binding configuration.
+</Note>
+
+## Performance Patterns
+
+### Virtual Scrolling with For
+
+```jsx
+import { observable } from '@legendapp/state'
+import { For } from '@legendapp/state/react'
+import { observer } from '@legendapp/state/react'
+
+const items$ = observable(
+    Array.from({ length: 10000 }, (_, i) => ({
+        id: i,
+        text: `Item ${i}`
+    }))
+)
+
+const viewport$ = observable({ start: 0, end: 50 })
+
+const Item = observer(function Item({ item$ }) {
+    return (
+        <div style={{ height: 40 }}>
+            {item$.text.get()}
+        </div>
+    )
+})
+
+function VirtualList() {
+    const handleScroll = (e) => {
+        const start = Math.floor(e.target.scrollTop / 40)
+        viewport$.set({ start, end: start + 50 })
+    }
+
+    return (
+        <div onScroll={handleScroll} style={{ height: 500, overflow: 'auto' }}>
+            <For each={() => {
+                const { start, end } = viewport$.get()
+                return items$.get().slice(start, end)
+            }}>
+                {(item$) => <Item item$={item$} />}
+            </For>
+        </div>
+    )
+}
+```
+
+### Debounced Updates
+
+```jsx
+import { observable } from '@legendapp/state'
+import { useObservable } from '@legendapp/state/react'
+import { Memo } from '@legendapp/state/react'
+
+function DebouncedSearch() {
+    const input$ = useObservable('')
+    const debouncedInput$ = observable()
+
+    let timeout
+    input$.onChange(({ value }) => {
+        clearTimeout(timeout)
+        timeout = setTimeout(() => {
+            debouncedInput$.set(value)
+        }, 300)
+    })
+
+    return (
+        <div>
+            <input 
+                value={input$.get()}
+                onChange={(e) => input$.set(e.target.value)}
+            />
+            <div>Searching for: <Memo>{debouncedInput$}</Memo></div>
+            <SearchResults query$={debouncedInput$} />
+        </div>
+    )
+}
+```
+
+### Conditional Expensive Renders
+
+```jsx
+import { useObservable } from '@legendapp/state/react'
+import { Show, Memo } from '@legendapp/state/react'
+
+function Dashboard() {
+    const isExpanded$ = useObservable(false)
+    const data$ = useObservable({ count: 0 })
+
+    return (
+        <div>
+            <button onClick={() => isExpanded$.toggle()}>
+                Toggle Details
+            </button>
+            
+            <div>Count: <Memo>{data$.count}</Memo></div>
+            
+            <Show if={isExpanded$}>
+                {/* Expensive component only renders when expanded */}
+                <ExpensiveDetailView data$={data$} />
+            </Show>
+        </div>
+    )
+}
+```
+
+## Measuring Performance
+
+### Render Counting
+
+```jsx
+import { observable } from '@legendapp/state'
+import { observer } from '@legendapp/state/react'
+import { Memo } from '@legendapp/state/react'
+
+const count$ = observable(0)
+
+let parentRenders = 0
+let childRenders = 0
+
+const Child = observer(function Child() {
+    childRenders++
+    return <div>Child renders: {childRenders}</div>
+})
+
+function Parent() {
+    parentRenders++
+    return (
+        <div>
+            <div>Parent renders: {parentRenders}</div>
+            <div>Count: <Memo>{count$}</Memo></div>
+            <Child />
+            <button onClick={() => count$.set(c => c + 1)}>+</button>
+        </div>
+    )
+}
+
+// Parent only renders once!
+// Child only renders once!
+// Only the Memo updates
+```
+
+### React DevTools Profiler
+
+Use React DevTools Profiler to visualize which components re-render:
+
+1. Open React DevTools
+2. Click "Profiler" tab
+3. Click record
+4. Interact with your app
+5. See which components re-rendered
+
+With Legend-State's fine-grained rendering, you'll see minimal re-renders.
+
+## Best Practices
+
+<Tip>
+1. **Start with observer** - Wrap components that read observables
+2. **Add Memo for hot paths** - Use `Memo` for frequently updating values
+3. **Split components** - Break large components into smaller observer components
+4. **Use For for lists** - Always use `For` for observable arrays
+5. **Avoid .get() in callbacks** - Use `.peek()` if you don't need tracking
+6. **Profile before optimizing** - Measure to ensure optimizations help
+</Tip>
+
+<Warning>
+**Common Pitfalls:**
+
+1. Over-optimization - Don't add `Memo` everywhere unnecessarily
+2. Missing observer - Components won't auto-track without `observer` or `useSelector`
+3. Using .peek() when you need .get() - Won't track the observable
+4. Creating too many micro-components - Balance granularity with complexity
+</Warning>
+
+## Decision Guide
+
+### When to use each approach:
+
+| Pattern | Use When | Don't Use When |
+|---------|----------|----------------|
+| **observer** | Component reads multiple observables | Component never reads observables |
+| **Memo** | Simple value display, frequent updates | Complex components, rare updates |
+| **useSelector** | Need fine control over tracking | observer is simpler |
+| **Reactive props** | Updating specific DOM properties | Entire component needs update |
+| **For** | Rendering observable arrays/objects | Static lists |
+| **Show** | Conditional rendering with observables | Simple boolean, no observable |
+
+## See Also
+
+<CardGroup cols={2}>
+  <Card title="observer() HOC" icon="eye" href="/react/observer">
+    Automatic tracking for components
+  </Card>
+  <Card title="Reactive Components" icon="bolt" href="/react/reactive-components">
+    Memo, Show, For, Switch components
+  </Card>
+  <Card title="React Hooks" icon="hook" href="/react/hooks">
+    Complete hooks reference
+  </Card>
+  <Card title="Overview" icon="book" href="/react/overview">
+    React integration overview
+  </Card>
+</CardGroup>

@@ -1,0 +1,201 @@
+---
+title: useSelector
+description: Subscribe to observable changes and trigger re-renders
+---
+
+`useSelector` is a React hook that subscribes to an observable or selector function and causes the component to re-render when the observed values change.
+
+## Usage
+
+```tsx
+import { useSelector } from '@legendapp/state/react'
+import { state$ } from './state'
+
+function Component() {
+  // Re-renders when state$.count changes
+  const count = useSelector(() => state$.count.get())
+  
+  return <div>Count: {count}</div>
+}
+```
+
+## Signature
+
+```typescript
+function useSelector<T>(
+  selector: Selector<T>,
+  options?: UseSelectorOptions
+): T
+```
+
+## Parameters
+
+<ParamField path="selector" type="Selector<T>" required>
+  A function or observable to track. Can be:
+  - An observable: `state$.count`
+  - A function: `() => state$.count.get() * 2`
+  - A complex selector: `() => state$.users.find(u => u.id === userId)`
+  
+  The selector is called on every render to ensure it uses current props/state, but only triggers re-renders when tracked observable values change.
+</ParamField>
+
+<ParamField path="options" type="UseSelectorOptions" optional>
+  Configuration options for the selector.
+  
+  <Expandable title="properties">
+    <ParamField path="suspense" type="boolean">
+      If `true`, the hook will suspend rendering until the value is defined (not `undefined`). Useful for async observables.
+    </ParamField>
+    
+    <ParamField path="skipCheck" type="boolean">
+      If `true`, skips the equality check and re-renders on every change. Useful when returning new objects/arrays.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+## Returns
+
+<ResponseField name="value" type="T">
+  The current value from the selector. The component will re-render whenever this value changes.
+</ResponseField>
+
+## Examples
+
+### Basic observable
+
+```tsx
+// Simple observable access
+const count = useSelector(state$.count)
+
+// Equivalent to:
+const count = useSelector(() => state$.count.get())
+```
+
+### Computed values
+
+```tsx
+const total = useSelector(() => {
+  const items = state$.cart.items.get()
+  return items.reduce((sum, item) => sum + item.price, 0)
+})
+```
+
+### With local state
+
+```tsx
+function TodoList({ filter }) {
+  // Selector re-runs on every render with current filter prop
+  const filteredTodos = useSelector(() => {
+    const todos = state$.todos.get()
+    return todos.filter(todo => todo.status === filter)
+  })
+  
+  return <>{filteredTodos.map(todo => <TodoItem key={todo.id} {...todo} />)}</>
+}
+```
+
+### Multiple observables
+
+```tsx
+const displayText = useSelector(() => {
+  const firstName = state$.user.firstName.get()
+  const lastName = state$.user.lastName.get()
+  const count = state$.count.get()
+  return `${firstName} ${lastName} (${count})`
+})
+```
+
+### With suspense
+
+```tsx
+function UserProfile({ userId }) {
+  // Suspends until user data is loaded
+  const user = useSelector(
+    () => state$.users[userId].get(),
+    { suspense: true }
+  )
+  
+  return <div>{user.name}</div>
+}
+```
+
+### Skip equality check
+
+```tsx
+// Returns a new array on every change - skipCheck prevents unnecessary comparisons
+const sortedItems = useSelector(
+  () => state$.items.get().sort((a, b) => a.name.localeCompare(b.name)),
+  { skipCheck: true }
+)
+```
+
+## Behavior
+
+### Tracking
+
+`useSelector` automatically tracks which observables are accessed during the selector function:
+
+```tsx
+const value = useSelector(() => {
+  if (state$.showDetails.get()) {
+    return state$.details.get() // Only tracked when showDetails is true
+  }
+  return 'Hidden'
+})
+```
+
+### Re-render optimization
+
+By default, `useSelector` only triggers re-renders when the selector's return value changes (using `!==` comparison):
+
+```tsx
+// Won't re-render if name stays 'Alice'
+const name = useSelector(() => state$.user.name.get())
+```
+
+For non-primitive values, use `skipCheck: true` to re-render on every observable change.
+
+### Inside observer components
+
+When used inside an `observer` component, `useSelector` is optimized to skip creating a subscription if given a plain observable:
+
+```tsx
+const Component = observer(() => {
+  // Optimized - no extra subscription needed
+  const count = useSelector(state$.count)
+  
+  return <div>{count}</div>
+})
+```
+
+## Type Parameters
+
+<ParamField path="T" type="type">
+  The return type of the selector function.
+</ParamField>
+
+## Aliases
+
+This hook is also exported as:
+- `use$` - Shorter alias
+- `useValue` - Descriptive alias
+
+```tsx
+import { use$, useValue } from '@legendapp/state/react'
+
+const count = use$(state$.count)
+const name = useValue(() => state$.user.name.get())
+```
+
+## Notes
+
+- The selector function runs on every render but only subscribes to the observables it accesses
+- Re-renders only occur when tracked values change and pass the equality check
+- Using `observer` is often more convenient for components that access many observables
+- In development mode, provides helpful warnings about infinite render loops
+
+## Related
+
+- [observer](/api/react/observer) - HOC for automatic observable tracking
+- [useObserve](/api/react/use-observe) - Run side effects on changes
+- [useObservable](/api/react/use-observable) - Create local observables

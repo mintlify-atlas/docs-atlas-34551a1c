@@ -1,0 +1,393 @@
+---
+title: 'configureLegendState'
+description: 'Extend Legend-State with custom functions and properties'
+---
+
+## Overview
+
+The `configureLegendState` function allows you to extend Legend-State by adding custom functions and properties to all observables. This is useful for creating reusable utilities or integrating with other libraries.
+
+## Signature
+
+```typescript
+function configureLegendState(config: {
+    observableFunctions?: Record<string, (node: NodeInfo, ...args: any[]) => any>;
+    observableProperties?: Record<string, { 
+        get: (node: NodeInfo) => any; 
+        set: (node: NodeInfo, value: any) => any 
+    }>;
+    jsonReplacer?: (this: any, key: string, value: any) => any;
+    jsonReviver?: (this: any, key: string, value: any) => any;
+}): void
+```
+
+<ParamField path="config" type="object" required>
+  Configuration object
+  
+  <ParamField path="observableFunctions" type="Record<string, Function>">
+    Custom functions to add to all observables. Each function receives the node and additional arguments.
+  </ParamField>
+  
+  <ParamField path="observableProperties" type="Record<string, { get, set }>">
+    Custom properties to add to all observables. Each property has a getter and setter that receive the node.
+  </ParamField>
+  
+  <ParamField path="jsonReplacer" type="(key: string, value: any) => any">
+    Custom JSON.stringify replacer function for observables
+  </ParamField>
+  
+  <ParamField path="jsonReviver" type="(key: string, value: any) => any">
+    Custom JSON.parse reviver function for observables
+  </ParamField>
+</ParamField>
+
+## Adding Custom Functions
+
+Add methods that can be called on any observable:
+
+```typescript
+import { configureLegendState, type NodeInfo } from '@legendapp/state';
+import { internal } from '@legendapp/state';
+
+const { get, set } = internal;
+
+const { configureLegendState } from '@legendapp/state/config/configureLegendState';
+
+configureLegendState({
+    observableFunctions: {
+        // Add a toggle() method for boolean observables
+        toggle(node: NodeInfo) {
+            const current = get(node);
+            set(node, !current);
+        },
+        
+        // Add an increment() method
+        increment(node: NodeInfo, amount: number = 1) {
+            const current = get(node);
+            set(node, current + amount);
+        },
+        
+        // Add a reset() method
+        reset(node: NodeInfo, defaultValue: any) {
+            set(node, defaultValue);
+        }
+    }
+});
+
+// Now use the custom functions
+import { observable } from '@legendapp/state';
+
+const state$ = observable({
+    isOpen: false,
+    count: 0
+});
+
+// Use custom methods
+state$.isOpen.toggle(); // true
+state$.count.increment(5); // 5
+state$.count.reset(0); // 0
+```
+
+<Note>
+Custom functions are added to the prototype, so they're available on all observables throughout your application.
+</Note>
+
+## Adding Custom Properties
+
+Add getter/setter properties to all observables:
+
+```typescript
+import { configureLegendState, type NodeInfo } from '@legendapp/state';
+import { internal } from '@legendapp/state';
+
+const { get, set } = internal;
+
+configureLegendState({
+    observableProperties: {
+        // Add a 'value' property as an alias for get/set
+        value: {
+            get(node: NodeInfo) {
+                return get(node);
+            },
+            set(node: NodeInfo, value: any) {
+                set(node, value);
+            }
+        },
+        
+        // Add a 'double' property
+        double: {
+            get(node: NodeInfo) {
+                return get(node) * 2;
+            },
+            set(node: NodeInfo, value: any) {
+                set(node, value / 2);
+            }
+        }
+    }
+});
+
+// Now use the custom properties
+import { observable } from '@legendapp/state';
+
+const num$ = observable(5);
+
+// Use custom property
+console.log(num$.value); // 5 (same as num$.get())
+num$.value = 10; // Same as num$.set(10)
+
+console.log(num$.double); // 20
+num$.double = 20; // Sets num$ to 10
+```
+
+## Custom JSON Serialization
+
+Configure how observables are serialized and deserialized:
+
+```typescript
+import { configureLegendState } from '@legendapp/state/config/configureLegendState';
+import { observable } from '@legendapp/state';
+
+configureLegendState({
+    // Custom replacer for JSON.stringify
+    jsonReplacer(key: string, value: any) {
+        // Convert Dates to ISO strings
+        if (value instanceof Date) {
+            return { __type: 'Date', value: value.toISOString() };
+        }
+        return value;
+    },
+    
+    // Custom reviver for JSON.parse
+    jsonReviver(key: string, value: any) {
+        // Restore Date objects
+        if (value && value.__type === 'Date') {
+            return new Date(value.value);
+        }
+        return value;
+    }
+});
+
+const state$ = observable({
+    createdAt: new Date('2024-01-01'),
+    name: 'Test'
+});
+
+// Serialize with custom replacer
+const json = JSON.stringify(state$.get());
+console.log(json);
+// {"createdAt":{"__type":"Date","value":"2024-01-01T00:00:00.000Z"},"name":"Test"}
+
+// Deserialize with custom reviver
+const restored = JSON.parse(json);
+console.log(restored.createdAt instanceof Date); // true
+```
+
+## Real-World Examples
+
+### Validation Methods
+
+```typescript
+import { configureLegendState, type NodeInfo } from '@legendapp/state';
+import { internal } from '@legendapp/state';
+
+const { get } = internal;
+
+configureLegendState({
+    observableFunctions: {
+        // Validate email
+        isValidEmail(node: NodeInfo): boolean {
+            const value = get(node);
+            if (typeof value !== 'string') return false;
+            return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+        },
+        
+        // Validate required
+        isRequired(node: NodeInfo): boolean {
+            const value = get(node);
+            return value !== null && value !== undefined && value !== '';
+        },
+        
+        // Validate min length
+        hasMinLength(node: NodeInfo, minLength: number): boolean {
+            const value = get(node);
+            return typeof value === 'string' && value.length >= minLength;
+        }
+    }
+});
+
+// Usage
+import { observable } from '@legendapp/state';
+
+const form$ = observable({
+    email: '',
+    password: ''
+});
+
+if (!form$.email.isValidEmail()) {
+    console.error('Invalid email');
+}
+
+if (!form$.password.hasMinLength(8)) {
+    console.error('Password must be at least 8 characters');
+}
+```
+
+### Persistence Helpers
+
+```typescript
+import { configureLegendState, type NodeInfo } from '@legendapp/state';
+import { internal } from '@legendapp/state';
+
+const { get, set } = internal;
+
+configureLegendState({
+    observableFunctions: {
+        // Save to localStorage
+        saveLocal(node: NodeInfo, key: string) {
+            const value = get(node);
+            localStorage.setItem(key, JSON.stringify(value));
+        },
+        
+        // Load from localStorage
+        loadLocal(node: NodeInfo, key: string) {
+            const stored = localStorage.getItem(key);
+            if (stored) {
+                set(node, JSON.parse(stored));
+            }
+        },
+        
+        // Clear from localStorage
+        clearLocal(node: NodeInfo, key: string) {
+            localStorage.removeItem(key);
+        }
+    }
+});
+
+// Usage
+import { observable } from '@legendapp/state';
+
+const settings$ = observable({
+    theme: 'dark',
+    lang: 'en'
+});
+
+// Load saved settings
+settings$.loadLocal('app-settings');
+
+// Save settings
+settings$.theme.onChange(() => {
+    settings$.saveLocal('app-settings');
+});
+```
+
+### Array Utilities
+
+```typescript
+import { configureLegendState, type NodeInfo } from '@legendapp/state';
+import { internal } from '@legendapp/state';
+
+const { get, set } = internal;
+
+configureLegendState({
+    observableFunctions: {
+        // Find item in array
+        findItem(node: NodeInfo, predicate: (item: any) => boolean) {
+            const arr = get(node);
+            if (!Array.isArray(arr)) return undefined;
+            return arr.find(predicate);
+        },
+        
+        // Remove item from array
+        removeItem(node: NodeInfo, predicate: (item: any) => boolean) {
+            const arr = get(node);
+            if (!Array.isArray(arr)) return;
+            const filtered = arr.filter(item => !predicate(item));
+            set(node, filtered);
+        },
+        
+        // Toggle item in array
+        toggleItem(node: NodeInfo, item: any) {
+            const arr = get(node);
+            if (!Array.isArray(arr)) return;
+            const index = arr.indexOf(item);
+            if (index >= 0) {
+                arr.splice(index, 1);
+            } else {
+                arr.push(item);
+            }
+            set(node, [...arr]);
+        }
+    }
+});
+
+// Usage
+import { observable } from '@legendapp/state';
+
+const todos$ = observable([
+    { id: 1, text: 'Task 1', done: false },
+    { id: 2, text: 'Task 2', done: true }
+]);
+
+const todo = todos$.findItem(t => t.id === 1);
+todos$.removeItem(t => t.done);
+```
+
+## TypeScript Support
+
+Extend the TypeScript types to include your custom functions and properties:
+
+```typescript
+import { configureLegendState } from '@legendapp/state/config/configureLegendState';
+import type { Observable } from '@legendapp/state';
+
+// Extend the Observable interface
+declare module '@legendapp/state' {
+    interface Observable<T> {
+        // Add custom function types
+        toggle(): void;
+        increment(amount?: number): void;
+        reset(defaultValue: T): void;
+        
+        // Add custom property types
+        value: T;
+        double: T extends number ? number : never;
+    }
+}
+
+configureLegendState({
+    observableFunctions: {
+        toggle(node) { /* ... */ },
+        increment(node, amount = 1) { /* ... */ },
+        reset(node, defaultValue) { /* ... */ }
+    },
+    observableProperties: {
+        value: {
+            get(node) { /* ... */ },
+            set(node, value) { /* ... */ }
+        },
+        double: {
+            get(node) { /* ... */ },
+            set(node, value) { /* ... */ }
+        }
+    }
+});
+```
+
+## Best Practices
+
+<Warning>
+**Call once at startup:** Configure Legend-State once when your app initializes, before creating any observables.
+</Warning>
+
+<Tip>
+**Use descriptive names:** Choose function and property names that clearly indicate their purpose and don't conflict with built-in methods.
+</Tip>
+
+<Note>
+**Access internal APIs carefully:** The `NodeInfo` type and internal functions are low-level APIs. Use the provided `get` and `set` functions from `internal` to safely access and modify node values.
+</Note>
+
+## Related
+
+- [enableReactTracking](/api/config/enable-react-tracking) - Configure React integration
+- [enableReactComponents](/api/config/enable-react-components) - Enable reactive components

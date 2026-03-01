@@ -1,0 +1,336 @@
+---
+title: syncObservable()
+description: Add sync and persistence capabilities to an existing observable
+---
+
+The `syncObservable()` function adds synchronization and persistence to an existing observable. Use this when you already have an observable and want to add sync capabilities, or when you need more control over the observable creation.
+
+## Usage
+
+```ts
+import { observable } from '@legendapp/state'
+import { syncObservable } from '@legendapp/state/sync'
+
+const data$ = observable({ items: [] })
+
+const syncState$ = syncObservable(data$, {
+  get: () => fetch('/api/items').then(r => r.json()),
+  set: ({ value }) => fetch('/api/items', {
+    method: 'POST',
+    body: JSON.stringify(value)
+  }),
+  persist: {
+    name: 'items',
+    plugin: ObservablePersistLocalStorage
+  }
+})
+```
+
+## Parameters
+
+<ParamField path="obs$" type="Observable<T>" required>
+  The observable to add sync capabilities to
+</ParamField>
+
+<ParamField path="options" type="SyncedOptions<T>" required>
+  Sync configuration options. Same as [`synced()`](/api/sync/synced#syncedoptions) options.
+</ParamField>
+
+## Return Value
+
+Returns an `Observable<ObservableSyncState>` that tracks the sync status:
+
+```ts
+interface ObservableSyncState {
+  // Loading states
+  isLoaded: Observable<boolean>
+  isPersistLoaded: Observable<boolean>
+  isLoading: Observable<boolean>
+  
+  // Sync states
+  isSyncEnabled: Observable<boolean>
+  isPersistEnabled: Observable<boolean>
+  
+  // Active operations
+  isSetting: Observable<boolean>
+  numPendingSets: Observable<number>
+  numPendingLocalLoads: Observable<number>
+  numPendingRemoteLoads: Observable<number>
+  
+  // Timing
+  lastSync: Observable<number | undefined>
+  
+  // Error handling
+  error: Observable<Error | undefined>
+  
+  // Control functions
+  sync: (options?: ObservableSyncStateOptions) => Promise<void>
+  getPendingChanges: () => PendingChanges | undefined
+  
+  // Lifecycle
+  clearPersist: () => Promise<void>  // DEPRECATED: use resetPersistence
+  resetPersistence: () => Promise<void>
+}
+```
+
+### ObservableSyncState Fields
+
+<ResponseField name="isLoaded" type="Observable<boolean>">
+  `true` when all remote loads have completed
+</ResponseField>
+
+<ResponseField name="isPersistLoaded" type="Observable<boolean>">
+  `true` when local persistence has loaded
+</ResponseField>
+
+<ResponseField name="isLoading" type="Observable<boolean>">
+  `true` when actively loading from remote
+</ResponseField>
+
+<ResponseField name="isSyncEnabled" type="Observable<boolean>">
+  Enable/disable remote syncing
+  
+  ```ts
+  // Disable syncing temporarily
+  syncState$.isSyncEnabled.set(false)
+  ```
+</ResponseField>
+
+<ResponseField name="isPersistEnabled" type="Observable<boolean>">
+  Enable/disable local persistence
+</ResponseField>
+
+<ResponseField name="isSetting" type="Observable<boolean>">
+  `true` when actively saving to remote
+</ResponseField>
+
+<ResponseField name="numPendingSets" type="Observable<number>">
+  Number of pending save operations
+</ResponseField>
+
+<ResponseField name="numPendingLocalLoads" type="Observable<number>">
+  Number of pending local persistence loads
+</ResponseField>
+
+<ResponseField name="numPendingRemoteLoads" type="Observable<number>">
+  Number of pending remote loads
+</ResponseField>
+
+<ResponseField name="lastSync" type="Observable<number | undefined>">
+  Timestamp of the last successful sync
+</ResponseField>
+
+<ResponseField name="error" type="Observable<Error | undefined>">
+  Most recent error from sync operations
+</ResponseField>
+
+<ResponseField name="sync" type="(options?: ObservableSyncStateOptions) => Promise<void>">
+  Manually trigger a sync
+  
+  ```ts
+  // Refresh from remote
+  await syncState$.sync()
+  
+  // Force refresh ignoring lastSync
+  await syncState$.sync({ resetLastSync: true })
+  ```
+</ResponseField>
+
+<ResponseField name="getPendingChanges" type="() => PendingChanges | undefined">
+  Get pending changes that haven't synced yet
+  
+  Returns an object with paths as keys and change info as values:
+  ```ts
+  {
+    "path/to/field": {
+      p: previousValue,
+      v: newValue,
+      t: pathTypes
+    }
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="resetPersistence" type="() => Promise<void>">
+  Clear all persisted data for this observable (both data and metadata)
+  
+  ```ts
+  await syncState$.resetPersistence()
+  ```
+</ResponseField>
+
+## Advanced Examples
+
+### Monitoring Sync State
+
+```ts
+const data$ = observable({ count: 0 })
+const syncState$ = syncObservable(data$, {
+  get: () => api.getData(),
+  persist: { name: 'data', plugin: ObservablePersistLocalStorage }
+})
+
+// Show loading indicator
+observe(() => {
+  if (syncState$.isLoading.get()) {
+    showSpinner()
+  } else {
+    hideSpinner()
+  }
+})
+
+// Show save status
+observe(() => {
+  if (syncState$.isSetting.get()) {
+    console.log('Saving...')
+  } else {
+    console.log('All changes saved')
+  }
+})
+
+// Handle errors
+observe(() => {
+  const error = syncState$.error.get()
+  if (error) {
+    showErrorMessage(error.message)
+  }
+})
+```
+
+### Manual Sync Control
+
+```ts
+const data$ = observable({ items: [] })
+const syncState$ = syncObservable(data$, {
+  get: () => api.getItems(),
+  syncMode: 'manual',  // Don't sync automatically
+  persist: { name: 'items', plugin: ObservablePersistLocalStorage }
+})
+
+// Sync on button click
+button.onclick = () => {
+  syncState$.sync()
+}
+
+// Or with refresh
+refreshButton.onclick = () => {
+  syncState$.sync({ resetLastSync: true })
+}
+```
+
+### Conditional Syncing
+
+```ts
+const data$ = observable({ value: 0 })
+const syncState$ = syncObservable(data$, {
+  get: () => api.getData(),
+  persist: { name: 'data', plugin: ObservablePersistLocalStorage }
+})
+
+// Disable syncing during offline mode
+const isOnline$ = observable(navigator.onLine)
+window.addEventListener('online', () => isOnline$.set(true))
+window.addEventListener('offline', () => isOnline$.set(false))
+
+observe(() => {
+  syncState$.isSyncEnabled.set(isOnline$.get())
+})
+
+// Manually sync when coming back online
+observe(() => {
+  if (isOnline$.get()) {
+    syncState$.sync()
+  }
+})
+```
+
+### Pending Changes Tracking
+
+```ts
+const form$ = observable({ name: '', email: '' })
+const syncState$ = syncObservable(form$, {
+  set: ({ value }) => api.saveForm(value),
+  debounceSet: 1000,
+  persist: { name: 'form', plugin: ObservablePersistLocalStorage, retrySync: true }
+})
+
+// Show unsaved changes indicator
+observe(() => {
+  const pending = syncState$.getPendingChanges()
+  const hasPending = pending && Object.keys(pending).length > 0
+  
+  unsavedIndicator.style.display = hasPending ? 'block' : 'none'
+})
+
+// Show what's pending
+button.onclick = () => {
+  const pending = syncState$.getPendingChanges()
+  console.log('Unsaved changes:', pending)
+}
+```
+
+### Syncing Multiple Observables
+
+```ts
+const user$ = observable({ name: '', email: '' })
+const settings$ = observable({ theme: 'light', notifications: true })
+
+const userSync$ = syncObservable(user$, {
+  get: () => api.getUser(),
+  set: ({ value }) => api.saveUser(value),
+  persist: { name: 'user', plugin: ObservablePersistLocalStorage }
+})
+
+const settingsSync$ = syncObservable(settings$, {
+  get: () => api.getSettings(),
+  set: ({ value }) => api.saveSettings(value),
+  persist: { name: 'settings', plugin: ObservablePersistLocalStorage }
+})
+
+// Wait for both to load
+await Promise.all([
+  when(userSync$.isLoaded),
+  when(settingsSync$.isLoaded)
+])
+```
+
+### Reset and Clear Data
+
+```ts
+const data$ = observable({ items: [] })
+const syncState$ = syncObservable(data$, {
+  get: () => api.getData(),
+  persist: { name: 'data', plugin: ObservablePersistLocalStorage }
+})
+
+// Clear persisted data and metadata
+logoutButton.onclick = async () => {
+  await syncState$.resetPersistence()
+  data$.set({ items: [] })  // Reset observable
+}
+```
+
+## Differences from synced()
+
+| Feature | `syncObservable()` | `synced()` |
+|---------|-------------------|------------|
+| **Input** | Existing observable | Creates new observable |
+| **Return** | Sync state observable | Synced observable |
+| **Use Case** | Add sync to existing observable | Create synced observable |
+| **Control** | Full control over observable | Observable created for you |
+
+```ts
+// syncObservable - you control the observable
+const data$ = observable({ items: [] })
+const syncState$ = syncObservable(data$, options)
+
+// synced - observable is created for you
+const data$ = synced(options)
+```
+
+## See Also
+
+- [synced()](/api/sync/synced) - Create a synced observable
+- [configureObservableSync()](/api/sync/configure) - Global sync configuration
+- [syncState()](/api/observable/sync-state) - Get sync state for any synced observable
+- [Sync & Persistence Guide](/guides/sync-persistence)

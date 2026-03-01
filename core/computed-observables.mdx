@@ -1,0 +1,521 @@
+---
+title: Computed Observables
+description: Create reactive derived values that automatically update
+---
+
+## Overview
+
+Computed observables are reactive values derived from other observables. They automatically recalculate when their dependencies change and only re-run when accessed. This makes them highly efficient for deriving data.
+
+## Creating Computed Observables
+
+### Using observable() with Functions
+
+The simplest way to create a computed observable is to pass a function to `observable()`:
+
+```typescript
+import { observable } from '@legendapp/state'
+
+const firstName$ = observable('Alice')
+const lastName$ = observable('Smith')
+
+// Computed full name
+const fullName$ = observable(() => {
+  return `${firstName$.get()} ${lastName$.get()}`
+})
+
+console.log(fullName$.get()) // "Alice Smith"
+
+firstName$.set('Bob')
+console.log(fullName$.get()) // "Bob Smith"
+```
+
+### Using the computed() Function
+
+The `computed()` function provides a more explicit syntax:
+
+```typescript
+import { observable, computed } from '@legendapp/state'
+
+const width$ = observable(100)
+const height$ = observable(50)
+
+const area$ = computed(() => {
+  return width$.get() * height$.get()
+})
+
+console.log(area$.get()) // 5000
+
+width$.set(200)
+console.log(area$.get()) // 10000
+```
+
+## Type Signatures
+
+```typescript
+// Create a read-only computed
+function computed<T>(
+  get: () => T
+): Observable<T>
+
+// Create a two-way computed with getter and setter
+function computed<T, T2 = T>(
+  get: () => T,
+  set: (value: T2) => void
+): Observable<T>
+```
+
+## Lazy Evaluation
+
+Computed observables are lazy - they don't run until accessed:
+
+```typescript
+const expensive$ = computed(() => {
+  console.log('Computing...')
+  return complexCalculation(data$.get())
+})
+
+// Nothing logged yet - not computed
+
+expensive$.get()
+// Logs: "Computing..."
+// Returns result
+
+expensive$.get()
+// Doesn't log - returns cached result
+
+data$.set(newData)
+expensive$.get()
+// Logs: "Computing..." again
+// Returns new result
+```
+
+## Two-Way Computed
+
+Create computed observables that can be both read and written:
+
+```typescript
+const celsius$ = observable(0)
+
+const fahrenheit$ = computed(
+  // Getter
+  () => celsius$.get() * 9/5 + 32,
+  // Setter
+  (value) => celsius$.set((value - 32) * 5/9)
+)
+
+console.log(fahrenheit$.get()) // 32
+
+fahrenheit$.set(212)
+console.log(celsius$.get()) // 100
+```
+
+### Computed with Multiple Sources
+
+```typescript
+const firstName$ = observable('Alice')
+const lastName$ = observable('Smith')
+
+const fullName$ = computed(
+  () => `${firstName$.get()} ${lastName$.get()}`,
+  (value) => {
+    const [first, last] = value.split(' ')
+    firstName$.set(first)
+    lastName$.set(last)
+  }
+)
+
+fullName$.set('Bob Jones')
+console.log(firstName$.get()) // "Bob"
+console.log(lastName$.get())  // "Jones"
+```
+
+## Computed Objects
+
+Computed observables can return objects, making nested properties observable:
+
+```typescript
+const user$ = observable({
+  firstName: 'Alice',
+  lastName: 'Smith',
+  age: 30
+})
+
+const profile$ = computed(() => ({
+  fullName: `${user$.firstName.get()} ${user$.lastName.get()}`,
+  isAdult: user$.age.get() >= 18,
+  initials: `${user$.firstName.get()[0]}${user$.lastName.get()[0]}`
+}))
+
+// Access nested computed properties
+console.log(profile$.fullName.get())  // "Alice Smith"
+console.log(profile$.isAdult.get())   // true
+console.log(profile$.initials.get())  // "AS"
+
+user$.firstName.set('Bob')
+console.log(profile$.fullName.get())  // "Bob Smith"
+console.log(profile$.initials.get())  // "BS"
+```
+
+## Advanced Patterns
+
+### Computed from Arrays
+
+Create computed values from array operations:
+
+```typescript
+const todos$ = observable([
+  { id: 1, text: 'Buy milk', done: false },
+  { id: 2, text: 'Walk dog', done: true },
+  { id: 3, text: 'Write docs', done: false }
+])
+
+const completedCount$ = computed(() => {
+  return todos$.get().filter(todo => todo.done).length
+})
+
+const totalCount$ = computed(() => todos$.length)
+
+const progress$ = computed(() => {
+  const completed = completedCount$.get()
+  const total = totalCount$.get()
+  return total > 0 ? (completed / total) * 100 : 0
+})
+
+console.log(progress$.get()) // 33.33
+
+todos$[0].done.set(true)
+console.log(progress$.get()) // 66.67
+```
+
+### Filtered Lists
+
+```typescript
+const items$ = observable([
+  { id: 1, name: 'Apple', category: 'fruit' },
+  { id: 2, name: 'Banana', category: 'fruit' },
+  { id: 3, name: 'Carrot', category: 'vegetable' }
+])
+
+const filter$ = observable('fruit')
+
+const filteredItems$ = computed(() => {
+  const filterValue = filter$.get()
+  return items$.get().filter(item => 
+    item.category === filterValue
+  )
+})
+
+console.log(filteredItems$.get())
+// [{ id: 1, name: 'Apple', ... }, { id: 2, name: 'Banana', ... }]
+
+filter$.set('vegetable')
+console.log(filteredItems$.get())
+// [{ id: 3, name: 'Carrot', ... }]
+```
+
+### Chained Computed
+
+Computed observables can depend on other computed observables:
+
+```typescript
+const numbers$ = observable([1, 2, 3, 4, 5])
+
+const doubled$ = computed(() => 
+  numbers$.get().map(n => n * 2)
+)
+
+const sum$ = computed(() => 
+  doubled$.get().reduce((a, b) => a + b, 0)
+)
+
+const average$ = computed(() => {
+  const total = sum$.get()
+  const count = numbers$.length
+  return count > 0 ? total / count : 0
+})
+
+console.log(average$.get()) // 6 (average of [2,4,6,8,10])
+
+numbers$.push(6)
+console.log(average$.get()) // 7 (average of [2,4,6,8,10,12])
+```
+
+### Computed with peek()
+
+Use `peek()` to read values without creating dependencies:
+
+```typescript
+const userId$ = observable(1)
+const config$ = observable({ apiUrl: '/api' })
+
+const userDataUrl$ = computed(() => {
+  const id = userId$.get()           // Tracked
+  const url = config$.peek()         // Not tracked
+  return `${url}/users/${id}`
+})
+
+console.log(userDataUrl$.get()) // "/api/users/1"
+
+userId$.set(2)
+console.log(userDataUrl$.get()) // "/api/users/2" (recomputed)
+
+config$.set({ apiUrl: '/api/v2' })
+console.log(userDataUrl$.get()) // "/api/users/2" (NOT recomputed)
+```
+
+### Self-Referencing Computed
+
+Access the previous computed value:
+
+```typescript
+const value$ = observable(10)
+
+const history$ = computed<number[]>(() => {
+  const current = value$.get()
+  const previous = history$.peek() || []
+  return [...previous, current]
+})
+
+console.log(history$.get()) // [10]
+
+value$.set(20)
+console.log(history$.get()) // [10, 20]
+
+value$.set(30)
+console.log(history$.get()) // [10, 20, 30]
+```
+
+### Memoized Selectors
+
+```typescript
+const store$ = observable({
+  users: {
+    '1': { id: '1', name: 'Alice', age: 30 },
+    '2': { id: '2', name: 'Bob', age: 25 }
+  },
+  selectedUserId: '1'
+})
+
+const selectedUser$ = computed(() => {
+  const id = store$.selectedUserId.get()
+  return store$.users[id].get()
+})
+
+console.log(selectedUser$.get()) // { id: '1', name: 'Alice', age: 30 }
+
+store$.selectedUserId.set('2')
+console.log(selectedUser$.get()) // { id: '2', name: 'Bob', age: 25 }
+```
+
+## Performance Optimization
+
+### Avoiding Unnecessary Recomputation
+
+Computed observables only recompute when:
+1. They are accessed (lazy evaluation)
+2. At least one dependency has changed
+3. Someone is observing them
+
+```typescript
+let computeCount = 0
+
+const data$ = observable([1, 2, 3])
+const sum$ = computed(() => {
+  computeCount++
+  return data$.get().reduce((a, b) => a + b, 0)
+})
+
+// Not computed yet
+console.log(computeCount) // 0
+
+sum$.get()
+console.log(computeCount) // 1
+
+sum$.get()
+sum$.get()
+console.log(computeCount) // Still 1 (cached)
+
+data$.push(4)
+sum$.get()
+console.log(computeCount) // 2 (recomputed)
+```
+
+### Breaking Down Complex Computations
+
+Split complex computations into multiple computed observables:
+
+```typescript
+// ❌ Less efficient - recomputes everything
+const result$ = computed(() => {
+  const filtered = items$.get().filter(complexFilter)
+  const sorted = filtered.sort(complexSort)
+  return sorted.map(complexTransform)
+})
+
+// ✅ More efficient - caches intermediate results  
+const filtered$ = computed(() => 
+  items$.get().filter(complexFilter)
+)
+
+const sorted$ = computed(() => 
+  filtered$.get().sort(complexSort)
+)
+
+const result$ = computed(() => 
+  sorted$.get().map(complexTransform)
+)
+```
+
+## Inline Computed Properties
+
+Define computed properties inline with your state:
+
+```typescript
+const cart$ = observable({
+  items: [
+    { id: 1, name: 'Widget', price: 10, quantity: 2 },
+    { id: 2, name: 'Gadget', price: 15, quantity: 1 }
+  ],
+  // Inline computed
+  total: () => {
+    return cart$.items.get().reduce((sum, item) => 
+      sum + (item.price * item.quantity), 0
+    )
+  },
+  itemCount: () => {
+    return cart$.items.get().reduce((sum, item) => 
+      sum + item.quantity, 0
+    )
+  }
+})
+
+console.log(cart$.total.get())     // 35
+console.log(cart$.itemCount.get()) // 3
+
+cart$.items[0].quantity.set(5)
+console.log(cart$.total.get())     // 65
+console.log(cart$.itemCount.get()) // 6
+```
+
+## Computed with Promises
+
+Computed observables can handle async operations:
+
+```typescript
+const userId$ = observable(1)
+
+const userData$ = computed(async () => {
+  const id = userId$.get()
+  const response = await fetch(`/api/users/${id}`)
+  return response.json()
+})
+
+// Initially undefined while loading
+console.log(userData$.get()) // undefined
+
+// Wait for promise to resolve
+await when(userData$)
+console.log(userData$.get()) // { id: 1, name: 'Alice', ... }
+
+// Changing dependency fetches new data
+userId$.set(2)
+await when(userData$)
+console.log(userData$.get()) // { id: 2, name: 'Bob', ... }
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Keep Computations Pure" icon="flask">
+    Computed functions should not have side effects - only transform data.
+  </Card>
+  <Card title="Use peek() for Config" icon="eye-slash">
+    Use `peek()` for configuration values that shouldn't trigger recomputation.
+  </Card>
+  <Card title="Break Down Complex Logic" icon="scissors">
+    Split complex computations into multiple computed observables for better caching.
+  </Card>
+  <Card title="Avoid Heavy Computations" icon="gauge-high">
+    For expensive operations, consider debouncing or using async computed.
+  </Card>
+</CardGroup>
+
+## Common Patterns
+
+### Sorting and Filtering
+
+```typescript
+const items$ = observable([/*...*/])
+const sortBy$ = observable<'name' | 'date'>('name')
+const filterText$ = observable('')
+
+const displayItems$ = computed(() => {
+  let items = items$.get()
+  
+  // Filter
+  const filter = filterText$.get().toLowerCase()
+  if (filter) {
+    items = items.filter(item => 
+      item.name.toLowerCase().includes(filter)
+    )
+  }
+  
+  // Sort
+  const sort = sortBy$.get()
+  return [...items].sort((a, b) => 
+    a[sort] > b[sort] ? 1 : -1
+  )
+})
+```
+
+### Aggregations
+
+```typescript
+const transactions$ = observable([/*...*/])
+
+const summary$ = computed(() => {
+  const txs = transactions$.get()
+  return {
+    total: txs.reduce((sum, tx) => sum + tx.amount, 0),
+    count: txs.length,
+    average: txs.length > 0 
+      ? txs.reduce((sum, tx) => sum + tx.amount, 0) / txs.length 
+      : 0
+  }
+})
+```
+
+### Validation
+
+```typescript
+const form$ = observable({
+  email: '',
+  password: '',
+  confirmPassword: ''
+})
+
+const validation$ = computed(() => ({
+  emailValid: /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form$.email.get()),
+  passwordValid: form$.password.get().length >= 8,
+  passwordsMatch: form$.password.get() === form$.confirmPassword.get(),
+  isValid() {
+    return this.emailValid && this.passwordValid && this.passwordsMatch
+  }
+}))
+
+if (validation$.isValid.get()) {
+  // Submit form
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Batching" href="/core/batching" icon="layer-group">
+    Learn how to optimize multiple updates
+  </Card>
+  <Card title="React Integration" href="/react/useSelector" icon="react">
+    Use computed observables in React components
+  </Card>
+</CardGroup>

@@ -1,0 +1,518 @@
+---
+title: React Hooks
+description: Complete reference for all Legend-State React hooks
+---
+
+Legend-State provides a comprehensive set of React hooks for managing observable state, observing changes, and integrating with React's lifecycle.
+
+## State Hooks
+
+### useObservable
+
+Creates a new observable that persists for the lifetime of the component.
+
+```tsx
+function useObservable<T>(): Observable<T | undefined>
+function useObservable<T>(initialValue: T): Observable<T>
+function useObservable<T>(initialValue: () => T): Observable<T>
+function useObservable<T>(initialValue: Promise<T>): Observable<T>
+function useObservable<T>(initialValue: T, deps?: DependencyList): Observable<T>
+```
+
+<Tabs>
+  <Tab title="Basic Usage">
+    ```jsx
+    import { useObservable } from '@legendapp/state/react'
+
+    function Counter() {
+        const count$ = useObservable(0)
+
+        return (
+            <div>
+                <div>Count: {count$.get()}</div>
+                <button onClick={() => count$.set(v => v + 1)}>
+                    Increment
+                </button>
+            </div>
+        )
+    }
+    ```
+  </Tab>
+  <Tab title="With Function">
+    ```jsx
+    import { useObservable } from '@legendapp/state/react'
+
+    function LazyInit() {
+        // Function runs only once on mount
+        const data$ = useObservable(() => {
+            return expensiveComputation()
+        })
+
+        return <div>{data$.get()}</div>
+    }
+    ```
+  </Tab>
+  <Tab title="With Promise">
+    ```jsx
+    import { useObservable } from '@legendapp/state/react'
+
+    function AsyncData() {
+        const data$ = useObservable(async () => {
+            const response = await fetch('/api/data')
+            return response.json()
+        })
+
+        return <div>{data$.get()?.name}</div>
+    }
+    ```
+  </Tab>
+  <Tab title="With Dependencies">
+    ```jsx
+    import { useObservable } from '@legendapp/state/react'
+
+    function DependentObservable({ userId }) {
+        // Re-creates observable when userId changes
+        const user$ = useObservable(
+            () => fetchUser(userId),
+            [userId]
+        )
+
+        return <div>{user$.get()?.name}</div>
+    }
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+**Alias:** `useLocalObservable` is an alias for `useObservable`
+</Note>
+
+### useComputed
+
+Creates a computed observable that automatically updates when dependencies change.
+
+```tsx
+function useComputed<T>(get: () => T): Observable<T>
+function useComputed<T>(get: () => T, deps: any[]): Observable<T>
+function useComputed<T, T2>(get: () => T, set: (value: T2) => void): Observable<T>
+```
+
+```jsx
+import { useObservable, useComputed } from '@legendapp/state/react'
+
+function FullName() {
+    const user$ = useObservable({ 
+        firstName: 'John', 
+        lastName: 'Doe' 
+    })
+
+    const fullName$ = useComputed(() => 
+        `${user$.firstName.get()} ${user$.lastName.get()}`
+    )
+
+    return (
+        <div>
+            <div>Full Name: {fullName$.get()}</div>
+            <input 
+                value={user$.firstName.get()}
+                onChange={e => user$.firstName.set(e.target.value)}
+            />
+        </div>
+    )
+}
+```
+
+<Tip>
+For simple computed values, you can also use `observable(() => ...)` directly:
+```jsx
+const fullName$ = observable(() => 
+    `${user$.firstName.get()} ${user$.lastName.get()}`
+)
+```
+</Tip>
+
+### useObservableReducer
+
+Creates an observable with reducer pattern, similar to `useReducer`.
+
+```tsx
+function useObservableReducer<R extends Reducer<any, any>>(
+    reducer: R,
+    initialState: ReducerState<R>
+): [Observable<ReducerState<R>>, Dispatch<ReducerAction<R>>]
+```
+
+```jsx
+import { useObservableReducer } from '@legendapp/state/react'
+
+function reducer(state, action) {
+    switch (action.type) {
+        case 'increment':
+            return { count: state.count + 1 }
+        case 'decrement':
+            return { count: state.count - 1 }
+        default:
+            return state
+    }
+}
+
+function Counter() {
+    const [state$, dispatch] = useObservableReducer(reducer, { count: 0 })
+
+    return (
+        <div>
+            <div>Count: {state$.count.get()}</div>
+            <button onClick={() => dispatch({ type: 'increment' })}>
+                +
+            </button>
+            <button onClick={() => dispatch({ type: 'decrement' })}>
+                -
+            </button>
+        </div>
+    )
+}
+```
+
+## Selection Hooks
+
+### useSelector
+
+Renders a component when the selected value changes. This is the core hook for fine-grained reactivity.
+
+```tsx
+function useSelector<T>(selector: Selector<T>, options?: UseSelectorOptions): T
+
+interface UseSelectorOptions {
+    suspense?: boolean
+    skipCheck?: boolean
+}
+```
+
+<Tabs>
+  <Tab title="With Observable">
+    ```jsx
+    import { observable } from '@legendapp/state'
+    import { useSelector } from '@legendapp/state/react'
+
+    const count$ = observable(0)
+
+    function Counter() {
+        const count = useSelector(count$)
+
+        return <div>Count: {count}</div>
+    }
+    ```
+  </Tab>
+  <Tab title="With Function">
+    ```jsx
+    import { observable } from '@legendapp/state'
+    import { useSelector } from '@legendapp/state/react'
+
+    const state$ = observable({ count: 0, name: 'John' })
+
+    function Component() {
+        // Only re-renders when count changes, not name
+        const count = useSelector(() => state$.count.get())
+
+        return <div>Count: {count}</div>
+    }
+    ```
+  </Tab>
+  <Tab title="With Suspense">
+    ```jsx
+    import { useSelector } from '@legendapp/state/react'
+    import { Suspense } from 'react'
+
+    function AsyncComponent() {
+        const data = useSelector(
+            async () => {
+                const res = await fetch('/api/data')
+                return res.json()
+            },
+            { suspense: true }
+        )
+
+        return <div>{data.name}</div>
+    }
+
+    function App() {
+        return (
+            <Suspense fallback={<div>Loading...</div>}>
+                <AsyncComponent />
+            </Suspense>
+        )
+    }
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+**Aliases:** `use$` and `useValue` are aliases for `useSelector`
+</Note>
+
+## Observation Hooks
+
+### useObserve
+
+Runs a callback when tracked observables change. Returns a dispose function.
+
+```tsx
+function useObserve<T>(callback: (e: ObserveEvent<T>) => void): () => void
+function useObserve<T>(
+    selector: Selector<T>,
+    reaction: (e: ObserveEventCallback<T>) => void,
+    options?: UseObserveOptions
+): () => void
+```
+
+<Tabs>
+  <Tab title="Simple Callback">
+    ```jsx
+    import { useObservable, useObserve } from '@legendapp/state/react'
+
+    function Component() {
+        const count$ = useObservable(0)
+
+        useObserve(() => {
+            console.log('Count changed:', count$.get())
+        })
+
+        return (
+            <button onClick={() => count$.set(v => v + 1)}>
+                Increment
+            </button>
+        )
+    }
+    ```
+  </Tab>
+  <Tab title="Selector + Reaction">
+    ```jsx
+    import { observable } from '@legendapp/state'
+    import { useObserve } from '@legendapp/state/react'
+
+    const user$ = observable({ name: 'John', email: 'john@example.com' })
+
+    function Component() {
+        useObserve(
+            () => user$.name.get(),
+            ({ value, previous }) => {
+                console.log(`Name changed from ${previous} to ${value}`)
+            }
+        )
+
+        return <div>{user$.name.get()}</div>
+    }
+    ```
+  </Tab>
+  <Tab title="With Dependencies">
+    ```jsx
+    import { useObservable, useObserve } from '@legendapp/state/react'
+
+    function Component({ userId }) {
+        const user$ = useObservable({ name: 'John' })
+
+        // Re-creates observer when userId changes
+        useObserve(
+            () => {
+                console.log('User changed:', user$.name.get())
+            },
+            [userId]
+        )
+
+        return <div>{user$.name.get()}</div>
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### useObserveEffect
+
+Like `useObserve`, but only runs once on mount (similar to `useEffect`).
+
+```tsx
+function useObserveEffect<T>(callback: (e: ObserveEvent<T>) => void): void
+function useObserveEffect<T>(
+    selector: Selector<T>,
+    reaction: (e: ObserveEventCallback<T>) => void,
+    options?: UseObserveOptions
+): void
+```
+
+```jsx
+import { observable } from '@legendapp/state'
+import { useObserveEffect } from '@legendapp/state/react'
+
+const user$ = observable({ name: 'John' })
+
+function Component() {
+    useObserveEffect(() => {
+        // This logs on mount and whenever user.name changes
+        console.log('User name:', user$.name.get())
+    })
+
+    return <div>{user$.name.get()}</div>
+}
+```
+
+## Lifecycle Hooks
+
+### useMount
+
+Runs a callback once when component mounts. Can return a cleanup function.
+
+```tsx
+function useMount(fn: () => void | (() => void)): void
+```
+
+```jsx
+import { useMount } from '@legendapp/state/react'
+
+function Component() {
+    useMount(() => {
+        console.log('Component mounted')
+
+        return () => {
+            console.log('Component unmounting')
+        }
+    })
+
+    return <div>Hello</div>
+}
+```
+
+### useUnmount
+
+Runs a callback when component unmounts.
+
+```tsx
+function useUnmount(fn: () => void): void
+```
+
+```jsx
+import { useUnmount } from '@legendapp/state/react'
+
+function Component() {
+    useUnmount(() => {
+        console.log('Component unmounted')
+    })
+
+    return <div>Hello</div>
+}
+```
+
+### useIsMounted
+
+Returns an observable boolean that tracks mount state.
+
+```tsx
+function useIsMounted(): Observable<boolean>
+```
+
+```jsx
+import { useIsMounted } from '@legendapp/state/react'
+
+function Component() {
+    const isMounted$ = useIsMounted()
+
+    const handleAsync = async () => {
+        const data = await fetchData()
+        // Only update if still mounted
+        if (isMounted$.get()) {
+            updateState(data)
+        }
+    }
+
+    return <button onClick={handleAsync}>Load Data</button>
+}
+```
+
+## Utility Hooks
+
+### useWhen
+
+Returns a promise that resolves when a predicate becomes truthy.
+
+```tsx
+function useWhen<T>(predicate: Selector<T>): Promise<T>
+function useWhen<T, T2>(
+    predicate: Selector<T>,
+    effect: (value: T) => T2
+): Promise<T2>
+```
+
+```jsx
+import { observable } from '@legendapp/state'
+import { useWhen } from '@legendapp/state/react'
+
+const user$ = observable({ name: undefined })
+
+function Component() {
+    useMount(async () => {
+        // Wait until name is set
+        const name = await useWhen(() => user$.name.get())
+        console.log('Name is ready:', name)
+    })
+
+    return <div>{user$.name.get()}</div>
+}
+```
+
+### useWhenReady
+
+Like `useWhen`, but resolves when value is not undefined.
+
+```tsx
+function useWhenReady<T>(predicate: Selector<T>): Promise<T>
+```
+
+```jsx
+import { useObservable, useWhenReady } from '@legendapp/state/react'
+
+function Component() {
+    const data$ = useObservable(async () => {
+        const res = await fetch('/api/data')
+        return res.json()
+    })
+
+    useMount(async () => {
+        const data = await useWhenReady(data$)
+        console.log('Data loaded:', data)
+    })
+
+    return <div>Loading...</div>
+}
+```
+
+## Best Practices
+
+<Tip>
+1. **Use useObservable for local state** - Create observables that live within components
+2. **Use useSelector for fine-grained updates** - Re-render only when specific values change
+3. **Use useObserve for side effects** - React to changes without triggering re-renders
+4. **Clean up with useUnmount** - Dispose of subscriptions and timers properly
+</Tip>
+
+<Warning>
+Don't call `.get()` in render without tracking:
+```jsx
+// Bad - won't re-render on changes
+const value = count$.peek()
+
+// Good - tracks and re-renders
+const value = useSelector(count$)
+```
+</Warning>
+
+## See Also
+
+<CardGroup cols={2}>
+  <Card title="observer() HOC" icon="eye" href="/react/observer">
+    Wrap components for automatic tracking
+  </Card>
+  <Card title="Reactive Components" icon="bolt" href="/react/reactive-components">
+    Components that accept observable props
+  </Card>
+  <Card title="Fine-Grained Rendering" icon="gauge-high" href="/react/fine-grained-rendering">
+    Advanced performance patterns
+  </Card>
+</CardGroup>

@@ -1,0 +1,440 @@
+---
+title: Reactive
+description: Proxy object for accessing reactive versions of HTML elements and React components
+---
+
+`Reactive` is a proxy object that provides reactive versions of HTML elements and React components, allowing you to pass observables as props using the `$` prefix.
+
+## Usage
+
+```tsx
+import { Reactive } from '@legendapp/state/react'
+import { state$ } from './state'
+
+function Component() {
+  return (
+    <div>
+      {/* Use $ prefix for reactive props */}
+      <Reactive.input $value={state$.inputValue} />
+      <Reactive.div $className={state$.theme}>
+        <Reactive.span $style={state$.textStyle}>
+          {state$.message.get()}
+        </Reactive.span>
+      </Reactive.div>
+    </div>
+  )
+}
+```
+
+## Signature
+
+```typescript
+const Reactive: IReactive
+
+interface IReactive {
+  [elementName: string]: FC<ShapeWith$<ElementProps>>
+}
+```
+
+## How it works
+
+`Reactive` is a proxy that:
+1. Intercepts property access (e.g., `Reactive.div`)
+2. Creates a reactive wrapper around that element/component
+3. Automatically handles props prefixed with `$` as observables
+4. Passes through regular props as-is
+
+## Props
+
+Any component accessed through `Reactive` accepts:
+
+<ParamField path="$propName" type="Selector<PropType>">
+  Observable version of any standard prop. The `$` prefix indicates the prop should reactively update when the observable changes.
+  
+  Examples:
+  - `$value` for input value
+  - `$className` for CSS classes
+  - `$style` for style objects
+  - `$disabled` for disabled state
+  - `$children` for child content
+</ParamField>
+
+<ParamField path="propName" type="PropType">
+  Standard React props work normally without the `$` prefix.
+</ParamField>
+
+## Examples
+
+### Reactive input with two-way binding
+
+```tsx
+<Reactive.input 
+  $value={state$.name}
+  placeholder="Enter your name"
+/>
+```
+
+### Reactive styling
+
+```tsx
+<Reactive.div
+  $className={state$.theme}
+  $style={() => ({
+    backgroundColor: state$.bgColor.get(),
+    color: state$.textColor.get()
+  })}
+>
+  Content
+</Reactive.div>
+```
+
+### Reactive attributes
+
+```tsx
+<Reactive.button
+  $disabled={state$.isSubmitting}
+  onClick={handleClick}
+>
+  Submit
+</Reactive.button>
+```
+
+### Reactive children
+
+```tsx
+<Reactive.div $children={state$.message} />
+
+// Equivalent to:
+<Reactive.div>{state$.message.get()}</Reactive.div>
+```
+
+### Complex reactive props
+
+```tsx
+<Reactive.div
+  $className={() => {
+    const isActive = state$.isActive.get()
+    const theme = state$.theme.get()
+    return `container ${theme} ${isActive ? 'active' : ''}`
+  }}
+>
+  Content
+</Reactive.div>
+```
+
+### Form elements
+
+```tsx
+function Form() {
+  return (
+    <form>
+      <Reactive.input
+        type="text"
+        $value={state$.form.name}
+        placeholder="Name"
+      />
+      
+      <Reactive.input
+        type="email"
+        $value={state$.form.email}
+        placeholder="Email"
+      />
+      
+      <Reactive.textarea
+        $value={state$.form.message}
+        placeholder="Message"
+      />
+      
+      <Reactive.select $value={state$.form.category}>
+        <option value="general">General</option>
+        <option value="support">Support</option>
+        <option value="sales">Sales</option>
+      </Reactive.select>
+      
+      <Reactive.input
+        type="checkbox"
+        $checked={state$.form.subscribe}
+      />
+    </form>
+  )
+}
+```
+
+### Conditional attributes
+
+```tsx
+<Reactive.button
+  $disabled={() => !state$.isValid.get() || state$.isSubmitting.get()}
+  $className={() => state$.isSubmitting.get() ? 'loading' : ''}
+  onClick={handleSubmit}
+>
+  Submit
+</Reactive.button>
+```
+
+### Reactive lists
+
+```tsx
+<Reactive.ul $children={() => {
+  const items = state$.items.get()
+  return items.map(item => <li key={item.id}>{item.name}</li>)
+}} />
+```
+
+### With custom components
+
+```tsx
+import { Button } from './Button'
+
+// Make your component reactive
+const ReactiveButton = reactive(Button, ['disabled', 'loading'])
+
+function App() {
+  return (
+    <ReactiveButton
+      $disabled={state$.isSubmitting}
+      $loading={state$.isLoading}
+      onClick={handleClick}
+    >
+      Click me
+    </ReactiveButton>
+  )
+}
+```
+
+### SVG elements
+
+```tsx
+<svg width="100" height="100">
+  <Reactive.circle
+    cx="50"
+    cy="50"
+    $r={state$.radius}
+    $fill={state$.color}
+  />
+</svg>
+```
+
+### Animation
+
+```tsx
+<Reactive.div
+  $style={() => ({
+    transform: `translateX(${state$.position.x.get()}px) translateY(${state$.position.y.get()}px)`,
+    opacity: state$.opacity.get()
+  })}
+>
+  Animated content
+</Reactive.div>
+```
+
+## Behavior
+
+### Automatic subscription
+
+Reactive props automatically subscribe to observable changes:
+
+```tsx
+// This re-renders only the className when theme changes
+<Reactive.div $className={state$.theme}>
+  Static content
+</Reactive.div>
+```
+
+### Two-way binding for inputs
+
+For form elements, reactive props are automatically bound:
+
+```tsx
+<Reactive.input $value={state$.text} />
+
+// Equivalent to:
+<input
+  value={state$.text.get()}
+  onChange={(e) => state$.text.set(e.target.value)}
+/>
+```
+
+### Mixing reactive and static props
+
+```tsx
+<Reactive.div
+  className="container"  // Static
+  $style={state$.style}  // Reactive
+  id="main"              // Static
+  $title={state$.title}  // Reactive
+>
+  Content
+</Reactive.div>
+```
+
+### Function props
+
+Reactive props can be functions that compute values:
+
+```tsx
+<Reactive.div
+  $className={() => {
+    // This tracks both observables
+    const theme = state$.theme.get()
+    const size = state$.size.get()
+    return `${theme} ${size}`
+  }}
+/>
+```
+
+### ForwardRef support
+
+Reactive components support refs:
+
+```tsx
+function Component() {
+  const inputRef = useRef<HTMLInputElement>(null)
+  
+  return (
+    <Reactive.input
+      ref={inputRef}
+      $value={state$.text}
+    />
+  )
+}
+```
+
+## Configuration
+
+### Enable reactive elements
+
+Reactive HTML elements are configured through `enableReactive`:
+
+```tsx
+import { enableReactive } from '@legendapp/state/react-reactive/enableReactive'
+import { configureReactive } from '@legendapp/state/react'
+
+enableReactive(configureReactive)
+```
+
+This is called automatically in non-test environments.
+
+### Configure custom components
+
+Use `configureReactive` to add custom reactive components:
+
+```tsx
+import { configureReactive } from '@legendapp/state/react'
+import { MyComponent } from './MyComponent'
+
+configureReactive({
+  MyComponent: {
+    component: MyComponent,
+    binders: {
+      value: {
+        handler: 'onChange',
+        getValue: (e) => e.target.value
+      }
+    }
+  }
+})
+```
+
+## Performance considerations
+
+### Fine-grained updates
+
+Reactive props only update the specific prop that changed:
+
+```tsx
+// Only className updates when theme changes
+// Only style updates when bgColor changes
+<Reactive.div
+  $className={state$.theme}
+  $style={() => ({ backgroundColor: state$.bgColor.get() })}
+/>
+```
+
+### Avoid unnecessary computations
+
+```tsx
+// ❌ Recomputes entire style object on any state change
+<Reactive.div $style={state$.styleConfig} />
+
+// ✅ Only computes when specific values change
+<Reactive.div $style={() => ({
+  color: state$.textColor.get(),
+  fontSize: state$.fontSize.get()
+})} />
+```
+
+## Comparison with regular components
+
+### Without Reactive
+
+```tsx
+const Component = observer(() => {
+  return (
+    <div className={state$.theme.get()}>
+      <input 
+        value={state$.text.get()}
+        onChange={(e) => state$.text.set(e.target.value)}
+      />
+    </div>
+  )
+})
+```
+
+### With Reactive
+
+```tsx
+function Component() {
+  return (
+    <Reactive.div $className={state$.theme}>
+      <Reactive.input $value={state$.text} />
+    </Reactive.div>
+  )
+}
+```
+
+## Type safety
+
+Reactive components are fully type-safe:
+
+```tsx
+// ✅ TypeScript knows $value should be Observable<string>
+<Reactive.input $value={state$.text} />
+
+// ❌ TypeScript error - wrong type
+<Reactive.input $value={state$.numberValue} />
+
+// ✅ Regular props work normally
+<Reactive.input type="email" placeholder="Email" />
+```
+
+## When to use Reactive
+
+### Use Reactive when:
+- You want fine-grained reactivity for specific props
+- Building forms with two-way data binding
+- Animating styles or attributes
+- You want minimal component re-renders
+- You prefer a more declarative syntax
+
+### Use observer instead when:
+- Component logic is complex
+- You need access to multiple observables throughout the component
+- You want automatic tracking of all observable access
+- Component re-renders are not a performance concern
+
+## Notes
+
+- Not available in test environments by default (use `enableReactive` manually)
+- Props with `$` prefix must be observables or functions returning values
+- Two-way binding is automatic for form elements
+- All HTML elements and SVG elements are available
+- Custom components need to be registered with `configureReactive`
+- Works with forwardRef for ref support
+
+## Related
+
+- [reactive](/api/react/reactive) - Make components accept reactive props  
+- [observer](/api/react/observer) - Automatic observable tracking
+- [useSelector](/api/react/use-selector) - Manual observable subscription
+- [configureReactive](/api/react/configure-reactive) - Configure reactive components

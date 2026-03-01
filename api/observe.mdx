@@ -1,0 +1,289 @@
+---
+title: observe()
+description: React to changes in observable state
+---
+
+## observe()
+
+Creates a reactive observer that runs automatically when tracked observables change. This is the foundation of Legend-State's reactivity system.
+
+### Signatures
+
+```typescript
+function observe<T>(
+    run: (e: ObserveEvent<T>) => T | void,
+    options?: ObserveOptions
+): () => void
+
+function observe<T>(
+    selector: Selector<T> | ((e: ObserveEvent<T>) => any),
+    reaction?: (e: ObserveEventCallback<T>) => any,
+    options?: ObserveOptions
+): () => void
+```
+
+### Parameters
+
+#### Single callback form
+
+<ParamField path="run" type="(e: ObserveEvent<T>) => T | void" required>
+  A function that runs immediately and re-runs whenever any observables accessed within it change.
+  
+  The function receives an `ObserveEvent` object with:
+  - `num` - The number of times this observer has run (0 for first run)
+  - `previous` - The previous return value from this function
+  - `cancel` - Set to `true` to stop tracking and dispose the observer
+  - `onCleanup` - Set to a function to run cleanup before the next run
+</ParamField>
+
+<ParamField path="options" type="ObserveOptions" optional>
+  Options for the observer:
+  - `immediate` - If `true`, ignores batching and runs the callback immediately when observables change (default: `false`)
+</ParamField>
+
+#### Selector/reaction form
+
+<ParamField path="selector" type="Selector<T> | ((e: ObserveEvent<T>) => any)" required>
+  A function or observable that computes a value. The reaction will only run when this value changes.
+  
+  Can be:
+  - A function that returns a value
+  - An observable
+  - An observable event
+</ParamField>
+
+<ParamField path="reaction" type="(e: ObserveEventCallback<T>) => any" optional>
+  A function that runs when the selector's value changes (doesn't run on initial computation).
+  
+  The function receives an `ObserveEventCallback` object with:
+  - `num` - The number of times the reaction has run
+  - `value` - The current value from the selector
+  - `previous` - The previous value from the selector
+  - `nodes` - The observable nodes being tracked
+  - `refresh` - Function to manually re-run the selector
+  - `onCleanup` - Set to a function to run cleanup before the next reaction
+  - `onCleanupReaction` - Set to a function to run cleanup when the observer is disposed
+</ParamField>
+
+<ParamField path="options" type="ObserveOptions" optional>
+  Options for the observer (same as single callback form).
+</ParamField>
+
+### Returns
+
+<ResponseField name="dispose" type="() => void">
+  A function that stops observing and cleans up all listeners. Call this when you no longer need the observer.
+</ResponseField>
+
+### Examples
+
+#### Basic observation
+
+```typescript
+import { observable, observe } from '@legendapp/state'
+
+const count$ = observable(0)
+
+// Automatically re-runs when count$ changes
+const dispose = observe(() => {
+  console.log('Count is:', count$.get())
+})
+
+count$.set(1) // Logs: Count is: 1
+count$.set(2) // Logs: Count is: 2
+
+// Stop observing
+dispose()
+```
+
+#### Tracking multiple observables
+
+```typescript
+const firstName$ = observable('John')
+const lastName$ = observable('Doe')
+
+observe(() => {
+  const full = `${firstName$.get()} ${lastName$.get()}`
+  console.log('Full name:', full)
+})
+
+firstName$.set('Jane') // Logs: Full name: Jane Doe
+lastName$.set('Smith')  // Logs: Full name: Jane Smith
+```
+
+#### Selector with reaction
+
+```typescript
+const user$ = observable({
+  name: 'John',
+  age: 30
+})
+
+// Selector computes a value
+// Reaction only runs when the computed value changes
+observe(
+  () => user$.age.get() >= 18,
+  ({ value, previous }) => {
+    console.log('Adult status changed:', previous, '->', value)
+  }
+)
+
+user$.age.set(17) // Logs: Adult status changed: true -> false
+user$.name.set('Jane') // No log (age didn't cross threshold)
+```
+
+#### Using ObserveEvent
+
+```typescript
+let count = 0
+
+observe((e) => {
+  if (e.num === 0) {
+    console.log('First run')
+  } else {
+    console.log('Run number:', e.num)
+    console.log('Previous value:', e.previous)
+  }
+  
+  const value = count$.get()
+  count++
+  
+  return value
+})
+```
+
+#### Cleanup with onCleanup
+
+```typescript
+const url$ = observable('/api/data')
+
+observe((e) => {
+  const controller = new AbortController()
+  
+  // Cleanup function runs before next observation
+  e.onCleanup = () => {
+    controller.abort()
+  }
+  
+  fetch(url$.get(), { signal: controller.signal })
+    .then(r => r.json())
+    .then(data => console.log(data))
+})
+
+// Changing URL will abort the previous fetch
+url$.set('/api/other')
+```
+
+#### Conditional tracking cancellation
+
+```typescript
+const state$ = observable({ active: true, value: 0 })
+
+observe((e) => {
+  if (!state$.active.get()) {
+    // Stop tracking when inactive
+    e.cancel = true
+    return
+  }
+  
+  console.log('Value:', state$.value.get())
+})
+
+state$.value.set(1) // Logs: Value: 1
+state$.active.set(false) // Observer stops tracking
+state$.value.set(2) // No log (observer is cancelled)
+```
+
+#### Immediate observation (skip batching)
+
+```typescript
+import { batch } from '@legendapp/state'
+
+const count$ = observable(0)
+
+observe(
+  () => {
+    console.log('Immediate:', count$.get())
+  },
+  { immediate: true }
+)
+
+observe(() => {
+  console.log('Batched:', count$.get())
+})
+
+batch(() => {
+  count$.set(1)
+  count$.set(2)
+  count$.set(3)
+})
+
+// Output:
+// Immediate: 1
+// Immediate: 2
+// Immediate: 3
+// Batched: 3
+```
+
+#### Observable event with selector
+
+```typescript
+const data$ = observable({ items: [] })
+
+observe(
+  () => data$.items.get().length,
+  ({ value, previous }) => {
+    console.log(`Items count changed from ${previous} to ${value}`)
+  }
+)
+
+data$.items.set([1, 2, 3]) // Logs: Items count changed from 0 to 3
+data$.items.push(4)        // Logs: Items count changed from 3 to 4
+```
+
+### Type Definitions
+
+```typescript
+interface ObserveEvent<T> {
+  num: number
+  previous?: T | undefined
+  cancel?: boolean
+  onCleanup?: () => void
+}
+
+interface ObserveEventCallback<T> {
+  num: number
+  previous?: T | undefined
+  value?: T
+  cancel: boolean
+  nodes: Map<NodeInfo, TrackingNode> | undefined
+  refresh: () => void
+  onCleanup?: () => void
+  onCleanupReaction?: () => void
+}
+
+interface ObserveOptions {
+  immediate?: boolean
+}
+
+type Selector<T> = 
+  | ObservableParam<T>
+  | ObservableEvent
+  | (() => ObservableParam<T>)
+  | (() => T)
+  | T
+```
+
+### Notes
+
+<Note>
+  `observe` runs immediately on creation and then again whenever any tracked observables change.
+</Note>
+
+<Warning>
+  Always call the returned dispose function when you're done observing to prevent memory leaks.
+</Warning>
+
+<Tip>
+  Use the selector/reaction form when you only want to react to specific computed values changing, not every underlying observable change.
+</Tip>

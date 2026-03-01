@@ -1,0 +1,382 @@
+---
+title: when() and whenReady()
+description: Wait for conditions to be true before executing code
+---
+
+## when()
+
+Waits for a condition to become truthy, then resolves with the value. Returns a Promise that resolves when the predicate returns a truthy value.
+
+### Signatures
+
+```typescript
+function when<T>(predicate: Selector<T>): Promise<T>
+function when<T>(predicate: Selector<T>[]): Promise<T[]>
+function when<T, T2>(
+    predicate: Selector<T>,
+    effect: (value: T) => T2
+): Promise<T2>
+function when<T, T2>(
+    predicate: Selector<T>[],
+    effect: (value: T[]) => T2
+): Promise<T2>
+function when<T, T2>(
+    predicate: Promise<T>,
+    effect: (value: T) => T2
+): Promise<T2>
+```
+
+### Parameters
+
+<ParamField path="predicate" type="Selector<T> | Selector<T>[] | Promise<T>" required>
+  The condition to wait for. Can be:
+  - An observable
+  - A function that returns a value
+  - An array of observables/functions (waits for all)
+  - A Promise
+  
+  The predicate is checked immediately and then tracked for changes. When it returns a truthy value, the Promise resolves.
+</ParamField>
+
+<ParamField path="effect" type="(value: T) => T2" optional>
+  An optional function to run when the predicate becomes truthy. The return value of this function becomes the resolved value of the Promise.
+  
+  If the effect returns a Promise, `when()` waits for it to resolve.
+</ParamField>
+
+### Returns
+
+<ResponseField name="Promise<T>" type="Promise<T>">
+  A Promise that resolves when the predicate becomes truthy:
+  - Without effect: resolves with the predicate's value
+  - With effect: resolves with the effect's return value
+  
+  If the predicate is already truthy, the Promise resolves immediately.
+</ResponseField>
+
+### Examples
+
+#### Wait for observable to be truthy
+
+```typescript
+import { observable, when } from '@legendapp/state'
+
+const isReady$ = observable(false)
+
+console.log('Waiting...')
+await when(isReady$)
+console.log('Ready!')
+
+// Meanwhile, in another part of your code:
+setTimeout(() => {
+  isReady$.set(true) // Promise resolves
+}, 1000)
+```
+
+#### Wait with effect function
+
+```typescript
+const userId$ = observable<number>()
+
+const userData = await when(
+  () => userId$.get(),
+  async (id) => {
+    const response = await fetch(`/api/users/${id}`)
+    return response.json()
+  }
+)
+
+console.log('User data:', userData)
+```
+
+#### Wait for multiple conditions
+
+```typescript
+const userLoaded$ = observable(false)
+const settingsLoaded$ = observable(false)
+
+// Wait for both to be true
+await when([userLoaded$, settingsLoaded$])
+console.log('All data loaded!')
+
+// Or with a computed condition
+await when(() => 
+  userLoaded$.get() && settingsLoaded$.get()
+)
+```
+
+#### Immediate resolution
+
+```typescript
+const value$ = observable(42)
+
+// Already truthy, resolves immediately
+const result = await when(value$)
+console.log(result) // 42
+```
+
+#### Wait for specific value
+
+```typescript
+const count$ = observable(0)
+
+// Wait until count reaches 5
+await when(() => count$.get() >= 5)
+console.log('Count is at least 5')
+
+// Increment count elsewhere
+setInterval(() => {
+  count$.set(c => c + 1)
+}, 100)
+```
+
+#### Chain multiple when() calls
+
+```typescript
+const step$ = observable(0)
+
+async function workflow() {
+  console.log('Starting workflow')
+  
+  await when(() => step$.get() >= 1)
+  console.log('Step 1 complete')
+  
+  await when(() => step$.get() >= 2)
+  console.log('Step 2 complete')
+  
+  await when(() => step$.get() >= 3)
+  console.log('Workflow complete')
+}
+
+workflow()
+
+// Progress through steps
+step$.set(1)
+step$.set(2)
+step$.set(3)
+```
+
+#### Wait for Promise
+
+```typescript
+const dataPromise = fetch('/api/data').then(r => r.json())
+
+// when() works with regular Promises too
+const data = await when(
+  dataPromise,
+  (data) => {
+    console.log('Data received:', data)
+    return data
+  }
+)
+```
+
+---
+
+## whenReady()
+
+Waits for an observable value to be "ready" (not `undefined` or `null`), then resolves. Similar to `when()` but specifically checks for non-nullish values.
+
+### Signatures
+
+```typescript
+function whenReady<T>(predicate: Selector<T>): Promise<T>
+function whenReady<T>(predicate: Selector<T>[]): Promise<T[]>
+function whenReady<T, T2>(
+    predicate: Selector<T>,
+    effect: (value: T) => T2
+): Promise<T2>
+function whenReady<T, T2>(
+    predicate: Selector<T>[],
+    effect: (value: T[]) => T2
+): Promise<T2[]>
+function whenReady<T, T2>(
+    predicate: Promise<T>,
+    effect: (value: T) => T2
+): Promise<T2>
+```
+
+### Parameters
+
+<ParamField path="predicate" type="Selector<T> | Selector<T>[] | Promise<T>" required>
+  The observable or function to wait for. Similar to `when()`, but checks if the value is non-nullish (not `undefined` or `null`).
+</ParamField>
+
+<ParamField path="effect" type="(value: T) => T2" optional>
+  An optional function to run when the value is ready. Same behavior as `when()`.
+</ParamField>
+
+### Returns
+
+<ResponseField name="Promise<T>" type="Promise<T>">
+  A Promise that resolves when the predicate's value is not `undefined` or `null`.
+</ResponseField>
+
+### Examples
+
+#### Wait for data to load
+
+```typescript
+import { observable, whenReady } from '@legendapp/state'
+
+interface User {
+  id: number
+  name: string
+}
+
+const user$ = observable<User>()
+
+// Wait for user to be loaded
+await whenReady(user$)
+console.log('User loaded:', user$.get())
+
+// Simulate async load
+fetch('/api/user')
+  .then(r => r.json())
+  .then(data => user$.set(data))
+```
+
+#### Wait for multiple values
+
+```typescript
+const userData$ = observable<User>()
+const settings$ = observable<Settings>()
+
+// Wait for both to have values
+const [user, settings] = await whenReady([
+  userData$,
+  settings$
+])
+
+console.log('Both loaded:', user, settings)
+```
+
+#### With effect function
+
+```typescript
+const userId$ = observable<number>()
+
+const user = await whenReady(
+  userId$,
+  async (id) => {
+    const response = await fetch(`/api/users/${id}`)
+    return response.json()
+  }
+)
+
+console.log('Loaded user:', user)
+```
+
+#### Distinguish between false and undefined
+
+```typescript
+const isEnabled$ = observable<boolean>()
+
+// when() would trigger on false
+await when(isEnabled$) // Waits for true only
+
+// whenReady() triggers when value is set (even if false)
+await whenReady(isEnabled$) // Triggers on true OR false
+
+isEnabled$.set(false) // whenReady resolves, when doesn't
+```
+
+#### Wait for array elements
+
+```typescript
+const items$ = observable<string[]>()
+
+// Wait for array to have at least one item
+await whenReady(() => {
+  const items = items$.get()
+  return items?.length > 0 ? items : undefined
+})
+
+console.log('Items available:', items$.get())
+```
+
+#### Promise that resolves to null
+
+```typescript
+const data$ = observable(Promise.resolve(null))
+
+// when() would resolve immediately (Promise is truthy)
+await when(data$)
+
+// whenReady() waits for the Promise to resolve to a non-null value
+await whenReady(data$) // Never resolves if Promise returns null
+```
+
+### Differences between when() and whenReady()
+
+| Feature | `when()` | `whenReady()` |
+|---------|----------|---------------|
+| Truthy check | `!!value` | `value !== undefined && value !== null` |
+| Triggers on `false` | No | Yes |
+| Triggers on `0` | No | Yes |
+| Triggers on `''` | No | Yes |
+| Triggers on `null` | No | No |
+| Triggers on `undefined` | No | No |
+
+```typescript
+const value$ = observable<number | undefined>()
+
+// when() - waits for truthy
+await when(value$)
+value$.set(0)  // Doesn't resolve
+value$.set(1)  // Resolves
+
+// whenReady() - waits for defined
+await whenReady(value$)
+value$.set(0)  // Resolves (0 is defined)
+value$.set(1)  // Also resolves
+```
+
+### Use Cases
+
+<Tip>
+  Use `when()` when you want to wait for a truthy condition:
+  - Boolean flags to be `true`
+  - Numbers to be non-zero
+  - Strings to be non-empty
+</Tip>
+
+<Tip>
+  Use `whenReady()` when you want to wait for a value to exist:
+  - Async data to load
+  - Optional values to be set
+  - Values that could be `false`, `0`, or `''`
+</Tip>
+
+### Type Definitions
+
+```typescript
+type Selector<T> = 
+  | ObservableParam<T>
+  | ObservableEvent
+  | (() => ObservableParam<T>)
+  | (() => T)
+  | T
+```
+
+### Notes
+
+<Note>
+  Both `when()` and `whenReady()` automatically stop tracking once the condition is met, so they don't leak memory.
+</Note>
+
+<Warning>
+  If the condition never becomes true, the Promise never resolves. Consider adding a timeout for safety in production code.
+</Warning>
+
+```typescript
+// Add timeout safety
+const value$ = observable<string>()
+
+const result = await Promise.race([
+  whenReady(value$),
+  new Promise((_, reject) => 
+    setTimeout(() => reject(new Error('Timeout')), 5000)
+  )
+])
+```

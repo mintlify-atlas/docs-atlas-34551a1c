@@ -1,0 +1,302 @@
+---
+title: 'enableReactTracking'
+description: 'Configure automatic React tracking behavior'
+---
+
+## Overview
+
+The `enableReactTracking` function configures how Legend-State tracks observables in React components. It can enable automatic tracking, provide development warnings, and help catch common mistakes.
+
+## Signature
+
+```typescript
+function enableReactTracking(options: {
+    auto?: boolean;
+    warnUnobserved?: boolean;
+    warnMissingUse?: boolean;
+}): void
+```
+
+<ParamField path="options" type="object" required>
+  Configuration options
+  
+  <ParamField path="auto" type="boolean" default={false}>
+    Automatically wrap `get()` calls in React components with `useSelector()`. When enabled, you don't need to use `observer()` or hooks.
+  </ParamField>
+  
+  <ParamField path="warnUnobserved" type="boolean" default={false}>
+    Warn in development when `get()` is called in an unobserved component. Helps catch missing `observer()` wrappers.
+  </ParamField>
+  
+  <ParamField path="warnMissingUse" type="boolean" default={false}>
+    Warn in development when `get()` is used instead of the `use$()` hook. Helps with React Compiler compatibility.
+  </ParamField>
+</ParamField>
+
+## Auto Mode
+
+With `auto: true`, all `get()` calls in React components automatically trigger re-renders. You don't need to use `observer()` or `useSelector()`.
+
+```typescript
+import { enableReactTracking } from '@legendapp/state/config/enableReactTracking';
+import { observable } from '@legendapp/state';
+
+// Enable auto mode
+enableReactTracking({ auto: true });
+
+const count$ = observable(0);
+
+// No observer() wrapper needed!
+function Counter() {
+    const count = count$.get(); // Automatically tracked
+    
+    return (
+        <div>
+            <p>Count: {count}</p>
+            <button onClick={() => count$.set(count + 1)}>
+                Increment
+            </button>
+        </div>
+    );
+}
+```
+
+### Auto Mode Behavior
+
+- `get()` calls inside components automatically use `useSelector()` internally
+- Works with any component, no wrapper needed
+- Already-tracked contexts (inside `observer()` or `useSelector()`) are not double-wrapped
+- Slightly more overhead per `get()` call, but very convenient
+
+<Warning>
+**Performance consideration:** Auto mode adds a small overhead to every `get()` call to detect React context. For most apps this is negligible, but in performance-critical code paths, prefer explicit `observer()` or `useSelector()`.
+</Warning>
+
+## Development Warnings
+
+### Warn Unobserved
+
+Catch missing `observer()` wrappers by warning when `get()` is called in unobserved components:
+
+```typescript
+import { enableReactTracking } from '@legendapp/state/config/enableReactTracking';
+
+enableReactTracking({ warnUnobserved: true });
+
+const user$ = observable({ name: 'Alice' });
+
+// This will log a warning in development
+function UserName() {
+    const name = user$.name.get(); // ⚠️ Warning: used in unobserved component
+    return <div>{name}</div>;
+}
+
+// Fix by wrapping with observer()
+import { observer } from '@legendapp/state/react';
+
+const UserName = observer(() => {
+    const name = user$.name.get(); // ✅ No warning
+    return <div>{name}</div>;
+});
+```
+
+### Warn Missing use$()
+
+Ensure React Compiler compatibility by warning when `get()` is used instead of `use$()`:
+
+```typescript
+import { enableReactTracking } from '@legendapp/state/config/enableReactTracking';
+
+enableReactTracking({ warnMissingUse: true });
+
+const theme$ = observable('dark');
+
+// This will log a warning in development
+function ThemedButton() {
+    const theme = theme$.get(); // ⚠️ Warning: use use$() instead
+    return <button className={theme}>Click me</button>;
+}
+
+// Fix by using use$()
+import { use$ } from '@legendapp/state/react';
+
+function ThemedButton() {
+    const theme = use$(theme$); // ✅ No warning
+    return <button className={theme}>Click me</button>;
+}
+```
+
+<Note>
+The `use$()` hook is recommended for React Compiler compatibility. It works the same as `useSelector(() => obs$.get())` but with better optimization support.
+</Note>
+
+## Combined Configuration
+
+You can enable multiple options together:
+
+```typescript
+import { enableReactTracking } from '@legendapp/state/config/enableReactTracking';
+
+// Development-friendly setup
+if (process.env.NODE_ENV === 'development') {
+    enableReactTracking({
+        warnUnobserved: true,
+        warnMissingUse: true
+    });
+}
+
+// Or use auto mode for rapid prototyping
+enableReactTracking({ 
+    auto: true 
+});
+```
+
+## When to Use Each Option
+
+### auto: true
+
+**Use when:**
+- Rapid prototyping or small apps
+- You want the simplest possible API
+- Component performance is not critical
+
+**Avoid when:**
+- Building large-scale production apps
+- You need maximum performance
+- You prefer explicit tracking for clarity
+
+### warnUnobserved: true
+
+**Use when:**
+- Learning Legend-State
+- Migrating existing code to use observables
+- You want to catch tracking mistakes early
+- Working in development mode
+
+**Avoid when:**
+- You intentionally use `peek()` in some places
+- The warnings become noisy
+
+### warnMissingUse: true
+
+**Use when:**
+- Preparing for React Compiler
+- You want to enforce `use$()` usage
+- Building a team project with coding standards
+- Working in development mode
+
+**Avoid when:**
+- Not using React Compiler
+- Using `observer()` components (no need for `use$()` inside)
+
+## Implementation Details
+
+Under the hood, `enableReactTracking` modifies the `get()` function on all observables to:
+
+1. Detect if it's called inside a React component (using React internals)
+2. Check if it's already tracked (e.g., inside `observer()` or `useSelector()`)
+3. Either automatically wrap with `useSelector()` (auto mode) or log warnings (warn modes)
+
+This detection uses React's internal context system and has minimal performance impact.
+
+## TypeScript Support
+
+No additional types needed - the configuration doesn't change the API surface, only the runtime behavior.
+
+## Examples
+
+### Development Setup
+
+```typescript
+// src/config.ts
+import { enableReactTracking } from '@legendapp/state/config/enableReactTracking';
+
+if (process.env.NODE_ENV === 'development') {
+    enableReactTracking({
+        warnUnobserved: true,
+        warnMissingUse: true
+    });
+}
+```
+
+### Prototype Mode
+
+```typescript
+// src/index.tsx
+import { enableReactTracking } from '@legendapp/state/config/enableReactTracking';
+import { observable } from '@legendapp/state';
+
+// Enable auto mode for quick prototyping
+enableReactTracking({ auto: true });
+
+const todos$ = observable([
+    { id: 1, text: 'Learn Legend-State', done: false }
+]);
+
+// Simple component with no observer() wrapper
+function TodoList() {
+    const todos = todos$.get(); // Auto-tracked
+    
+    return (
+        <ul>
+            {todos.map(todo => (
+                <li key={todo.id}>
+                    <input
+                        type="checkbox"
+                        checked={todo.done}
+                        onChange={(e) => {
+                            const todo = todos$.find(t => t.id === todo.id);
+                            todo.done.set(e.target.checked);
+                        }}
+                    />
+                    {todo.text}
+                </li>
+            ))}
+        </ul>
+    );
+}
+```
+
+### Production Setup
+
+```typescript
+// Don't enable in production - use explicit tracking instead
+import { observer } from '@legendapp/state/react';
+import { observable } from '@legendapp/state';
+
+const state$ = observable({ count: 0 });
+
+// Explicit observer() wrapper
+export const Counter = observer(() => {
+    const count = state$.count.get();
+    return (
+        <div>
+            <p>Count: {count}</p>
+            <button onClick={() => state$.count.set(count + 1)}>
+                +1
+            </button>
+        </div>
+    );
+});
+```
+
+## Best Practices
+
+<Tip>
+**Configure once at startup:** Call `enableReactTracking` once when your app initializes, before rendering any components.
+</Tip>
+
+<Warning>
+**Development only:** The `warn*` options should typically only be enabled in development, not production.
+</Warning>
+
+<Note>
+**Choose your style:** Either use auto mode everywhere, or use explicit tracking everywhere. Mixing styles can be confusing.
+</Note>
+
+## Related
+
+- [observer](/api/react/observer) - Wrap components for reactive tracking
+- [useSelector](/api/react/use-selector) - Track observables in hooks
+- [use$](/api/react/use) - React Compiler-friendly tracking hook
+- [configureLegendState](/api/config/configure-legend-state) - Core configuration

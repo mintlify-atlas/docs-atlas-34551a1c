@@ -1,0 +1,271 @@
+---
+title: React Integration Overview
+description: Learn how Legend-State integrates with React for fine-grained reactivity and minimal re-renders
+---
+
+Legend-State provides powerful React integration that enables fine-grained reactivity, automatic re-renders, and exceptional performance. The React integration is designed to be simple, type-safe, and blazingly fast.
+
+## Why Use Legend-State with React?
+
+### 1. Fine-Grained Reactivity
+
+Legend-State lets you make your renders super fine-grained, so your apps will be much faster because React has to do less work. The best way to be fast is to render less, less often.
+
+```jsx
+import { useObservable } from '@legendapp/state/react'
+import { Memo } from '@legendapp/state/react'
+
+function FineGrained() {
+    const count$ = useObservable(0)
+
+    useInterval(() => {
+        count$.set(v => v + 1)
+    }, 600)
+
+    // The text updates itself so the component doesn't re-render
+    return (
+        <div>
+            Count: <Memo>{count$}</Memo>
+        </div>
+    )
+}
+```
+
+### 2. The Fastest React State Library
+
+Legend-State beats every other state library on just about every metric and is so optimized for arrays that it even beats vanilla JS on the "swap" and "replace all rows" benchmarks. At only `4kb` and with the massive reduction in boilerplate code, you'll have big savings in file size too.
+
+### 3. Simple API with No Boilerplate
+
+There is no boilerplate and there are no contexts, actions, reducers, dispatchers, sagas, thunks, or epics. It doesn't modify your data at all.
+
+```jsx
+import { observable } from '@legendapp/state'
+import { observer } from '@legendapp/state/react'
+
+const settings$ = observable({ theme: 'dark' })
+
+const Component = observer(function Component() {
+    const theme = settings$.theme.get()
+
+    return <div>Theme: {theme}</div>
+})
+```
+
+### 4. Automatic Dependency Tracking
+
+Components and hooks automatically track which observables they access and re-render only when those specific values change.
+
+## Key Concepts
+
+### Observables
+
+Observables are the core primitive. They hold reactive state that can be observed for changes:
+
+```jsx
+import { observable } from '@legendapp/state'
+
+const state$ = observable({ count: 0, user: { name: 'John' } })
+
+// Get values
+const count = state$.count.get()  // 0
+
+// Set values
+state$.count.set(1)
+state$.user.name.set('Jane')
+```
+
+<Note>
+By convention, observable variables are suffixed with `$` to make them easy to identify.
+</Note>
+
+### Selectors
+
+A selector can be:
+- An observable: `count$`
+- A function that reads observables: `() => count$.get()`
+- A computed observable: `observable(() => count$.get() * 2)`
+
+### Fine-Grained Rendering
+
+Legend-State provides multiple ways to achieve fine-grained rendering:
+
+1. **observer HOC** - Wraps components to auto-track observables
+2. **Reactive components** - Components that accept observable props
+3. **useSelector hook** - Re-renders only when selector value changes
+4. **Memo component** - Updates DOM directly without re-rendering parent
+
+## Installation
+
+```bash
+bun add @legendapp/state
+# or
+npm install @legendapp/state
+# or
+yarn add @legendapp/state
+```
+
+## Basic Usage
+
+### Creating Local State
+
+Use `useObservable` to create component-local observable state:
+
+```jsx
+import { useObservable } from '@legendapp/state/react'
+
+function Counter() {
+    const count$ = useObservable(0)
+
+    return (
+        <div>
+            <div>Count: {count$.get()}</div>
+            <button onClick={() => count$.set(v => v + 1)}>
+                Increment
+            </button>
+        </div>
+    )
+}
+```
+
+### Using Global State
+
+Create observables outside components for global state:
+
+```jsx
+import { observable } from '@legendapp/state'
+import { observer } from '@legendapp/state/react'
+
+const store$ = observable({
+    count: 0,
+    user: { name: 'John' }
+})
+
+const Counter = observer(function Counter() {
+    return (
+        <div>
+            <div>Count: {store$.count.get()}</div>
+            <button onClick={() => store$.count.set(v => v + 1)}>
+                Increment
+            </button>
+        </div>
+    )
+})
+```
+
+### Reactive Components
+
+Reactive components accept observable props prefixed with `$`:
+
+```jsx
+import { Reactive } from '@legendapp/state/react'
+import { useObservable } from '@legendapp/state/react'
+
+function App() {
+    const count$ = useObservable(0)
+
+    return (
+        <div>
+            {/* Component re-renders only when count$ changes */}
+            <Reactive.div $children={count$} />
+            <button onClick={() => count$.set(v => v + 1)}>
+                Increment
+            </button>
+        </div>
+    )
+}
+```
+
+## Core Exports
+
+Legend-State exports its React integration from `@legendapp/state/react`:
+
+```jsx
+import {
+    // Hooks
+    useObservable,
+    useSelector,
+    useComputed,
+    useObserve,
+    useObserveEffect,
+    useMount,
+    useUnmount,
+    useIsMounted,
+    useWhen,
+    useObservableReducer,
+    
+    // HOCs
+    observer,
+    reactive,
+    reactiveObserver,
+    
+    // Components
+    Memo,
+    Computed,
+    Show,
+    For,
+    Switch,
+    Reactive,
+} from '@legendapp/state/react'
+```
+
+## Type Safety
+
+Legend-State is built with TypeScript and provides excellent type inference:
+
+```tsx
+import { observable } from '@legendapp/state'
+import { useObservable } from '@legendapp/state/react'
+
+interface User {
+    id: string
+    name: string
+    email: string
+}
+
+const user$ = observable<User>({
+    id: '1',
+    name: 'John',
+    email: 'john@example.com'
+})
+
+function UserProfile() {
+    const localUser$ = useObservable<User>({
+        id: '2',
+        name: 'Jane',
+        email: 'jane@example.com'
+    })
+
+    // TypeScript knows these are strings
+    const name = localUser$.name.get()
+    const email = user$.email.get()
+
+    return <div>{name} - {email}</div>
+}
+```
+
+## Performance Tips
+
+<Tip>
+1. **Use fine-grained updates** - Use `Memo` or `Reactive` components to update specific parts without re-rendering the parent
+2. **Use observer wisely** - Wrap components that read observables with `observer` for automatic tracking
+3. **Avoid unnecessary .get() calls** - Only call `.get()` when you need the value and want to track it
+4. **Use computed observables** - For derived state, use computed observables instead of calculating in render
+</Tip>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="React Hooks" icon="hook" href="/react/hooks">
+    Learn about all available React hooks
+  </Card>
+  <Card title="observer() HOC" icon="eye" href="/react/observer">
+    Auto-track observables in components
+  </Card>
+  <Card title="Reactive Components" icon="bolt" href="/react/reactive-components">
+    Use components with observable props
+  </Card>
+  <Card title="Fine-Grained Rendering" icon="gauge-high" href="/react/fine-grained-rendering">
+    Advanced patterns for optimal performance
+  </Card>
+</CardGroup>

@@ -1,0 +1,477 @@
+---
+title: Migration Guide v2 to v3
+description: Complete guide for migrating from Legend-State v2 to v3
+---
+
+Legend-State v3 brings significant improvements including rewritten types, enhanced sync/persist functionality, and breaking changes. This guide helps you migrate from v2 to v3.
+
+<Info>
+  For complete details, see the [official migration guide](https://www.legendapp.com/open-source/state/v3/other/migrating/)
+</Info>
+
+## Major Changes Overview
+
+v3 includes several breaking changes designed to improve the developer experience:
+
+- **Rewritten types**: Much better TypeScript experience
+- **New synced system**: Improved sync/persist with new plugins
+- **Simplified computeds**: Now just functions
+- **Updated hooks**: Better reactive behavior
+- **Removed features**: Old persist system, some deprecated APIs
+
+## Breaking Changes
+
+### 1. Types Rewritten from Scratch
+
+The type system has been completely rewritten for better inference and stricter checking:
+
+```typescript
+// v2 - Types were sometimes imprecise
+const state$ = observable({ count: 0 });
+
+// v3 - Much better type inference and error messages
+const state$ = observable({ count: 0 });
+// Now properly infers nested types and prevents errors
+```
+
+<Info>
+  The new types should "just work" for most use cases. If you encounter type errors, they're likely catching real issues.
+</Info>
+
+### 2. Computed and Proxy Are Now Just Functions
+
+In v2, you used `computed()` and `proxy()` helpers. In v3, just use functions:
+
+```typescript
+import { observable } from '@legendapp/state';
+
+// v2
+import { computed } from '@legendapp/state';
+const fullName$ = computed(() => 
+  `${state$.firstName.get()} ${state$.lastName.get()}`
+);
+
+// v3 - Just use a function
+const fullName$ = observable(() => 
+  `${state$.firstName.get()} ${state$.lastName.get()}`
+);
+```
+
+### 3. New Synced System
+
+The old persist system has been replaced with a new `synced` system:
+
+```typescript
+import { observable } from '@legendapp/state';
+import { syncedKeel } from '@legendapp/state/sync-plugins/keel';
+
+// v2 - Old persist system
+import { persistObservable } from '@legendapp/state/persist';
+const state$ = observable({ users: [] });
+persistObservable(state$, { /* ... */ });
+
+// v3 - New synced system
+const state$ = observable({
+  users: syncedKeel({
+    list: queries.getUsers,
+    create: mutations.createUsers,
+    update: mutations.updateUsers,
+    delete: mutations.deleteUsers,
+    persist: { name: 'users', retrySync: true },
+  }),
+});
+```
+
+<Steps>
+  <Step title="Remove old persist imports">
+    Remove all imports of `persistObservable`, `usePersistedObservable`, etc.
+  </Step>
+  
+  <Step title="Switch to synced">
+    Use the new `synced` function with appropriate sync plugins:
+    - `syncedKeel` for Keel
+    - `syncedSupabase` for Supabase
+    - `syncedFetch` for fetch API
+    - `syncedQuery` for TanStack Query
+  </Step>
+  
+  <Step title="Update configuration">
+    The persist configuration has changed. See the sync documentation for details.
+  </Step>
+</Steps>
+
+### 4. useObservable with Functions is Reactive
+
+In v2, `useObservable` with a function parameter was just for initialization. In v3, it's reactive like `useComputed`:
+
+```typescript
+import { useObservable } from '@legendapp/state/react';
+
+// v2 - Function only runs once for initialization
+const local$ = useObservable(() => globalState$.value.get());
+
+// v3 - Function is reactive and re-runs when dependencies change
+const local$ = useObservable(() => globalState$.value.get());
+
+// v3 - If you want the old behavior, use peek()
+const local$ = useObservable(() => globalState$.value.peek());
+```
+
+<Warning>
+  If your `useObservable` functions access other observables and you want them to be initialization only, wrap those accesses with `.peek()`.
+</Warning>
+
+### 5. Computeds Only Re-compute When Observed
+
+Computeds are now lazy and only re-compute when something is listening:
+
+```typescript
+import { observable, observe } from '@legendapp/state';
+
+const state$ = observable({ count: 0 });
+
+// v2 - This would re-run whenever count changes
+const doubled$ = observable(() => state$.count.get() * 2);
+
+// v3 - Only re-runs when doubled$ is being observed
+const doubled$ = observable(() => state$.count.get() * 2);
+
+// Start observing to activate
+observe(() => {
+  console.log(doubled$.get()); // Now it will re-compute
+});
+```
+
+<Info>
+  This improves performance by avoiding unnecessary computations. If you had computeds with side effects, you'll need to explicitly observe them.
+</Info>
+
+### 6. set() and toggle() Return Void
+
+These methods no longer return the observable for chaining:
+
+```typescript
+import { observable } from '@legendapp/state';
+
+const state$ = observable({ count: 0 });
+
+// v2 - Could chain
+state$.count.set(5).get();
+
+// v3 - Returns void
+state$.count.set(5);
+const value = state$.count.get();
+```
+
+### 7. onSet Renamed to onAfterSet
+
+For clarity about when the listener fires:
+
+```typescript
+import { observable } from '@legendapp/state';
+
+// v2
+const state$ = observable({ count: 0 });
+state$.count.onSet(() => {
+  console.log('Value set');
+});
+
+// v3
+state$.count.onAfterSet(() => {
+  console.log('Value set');
+});
+```
+
+### 8. Removed Features
+
+Several features have been removed:
+
+<Accordion title="lockObservable">
+  The `lockObservable` function has been removed because the new computed system doesn't support modifying types to be readonly.
+  
+  ```typescript
+  // v2
+  import { lockObservable } from '@legendapp/state';
+  lockObservable(state$);
+  
+  // v3 - No replacement
+  // Use TypeScript's readonly types instead if needed
+  ```
+</Accordion>
+
+<Accordion title="After batch concept">
+  The concept of "after batch" has been removed as it was unreliable with recursive batches.
+  
+  ```typescript
+  // v2
+  import { afterBatch } from '@legendapp/state';
+  afterBatch(() => {
+    console.log('After batch');
+  });
+  
+  // v3 - Use batch callbacks instead
+  import { batch } from '@legendapp/state';
+  batch(() => {
+    state$.count.set(1);
+    state$.name.set('John');
+  });
+  ```
+</Accordion>
+
+<Accordion title="Old persist system">
+  All old persist functions have been removed:
+  - `persistObservable`
+  - `usePersistedObservable`
+  - `configureObservablePersistence`
+  
+  Use the new `synced` system instead.
+</Accordion>
+
+### 9. Renamed Functions
+
+Some functions have been renamed for clarity:
+
+```typescript
+// v2
+import { enableDirectAccess, enableDirectPeek } from '@legendapp/state';
+
+// v3
+import { enable$GetSet } from '@legendapp/state/config/enable$GetSet';
+import { enable_PeekAssign } from '@legendapp/state/config/enable_PeekAssign';
+
+enable$GetSet(); // Was enableDirectAccess
+enable_PeekAssign(); // Was enableDirectPeek
+```
+
+## New Features in v3
+
+### Improved Sync Plugins
+
+v3 introduces powerful new sync plugins:
+
+```typescript
+import { observable } from '@legendapp/state';
+import { syncedKeel } from '@legendapp/state/sync-plugins/keel';
+import { syncedSupabase } from '@legendapp/state/sync-plugins/supabase';
+import { syncedQuery } from '@legendapp/state/sync-plugins/tanstack-query';
+import { syncedFetch } from '@legendapp/state/sync-plugins/fetch';
+
+// Keel plugin
+const users$ = observable(
+  syncedKeel({
+    list: queries.getUsers,
+    create: mutations.createUser,
+    update: mutations.updateUser,
+    delete: mutations.deleteUser,
+    persist: { name: 'users', retrySync: true },
+    changesSince: 'last-sync',
+  })
+);
+
+// Supabase plugin
+const posts$ = observable(
+  syncedSupabase({
+    table: 'posts',
+    select: (from) => from.select('*'),
+    persist: { name: 'posts' },
+  })
+);
+
+// TanStack Query plugin
+const data$ = observable(
+  syncedQuery({
+    queryKey: ['users'],
+    queryFn: () => fetchUsers(),
+  })
+);
+```
+
+### Better TypeScript Support
+
+Types are now much more accurate and helpful:
+
+```typescript
+import { observable } from '@legendapp/state';
+
+const state$ = observable({
+  count: 0,
+  user: { name: 'John', age: 30 },
+  items: [1, 2, 3],
+});
+
+// v3 has much better inference
+const count = state$.count.get(); // number (correctly inferred)
+const user = state$.user.get(); // { name: string; age: number }
+const items = state$.items.get(); // number[]
+```
+
+## Migration Steps
+
+<Steps>
+  <Step title="Update package">
+    Update to the latest version:
+    
+    ```bash
+    npm install @legendapp/state@latest
+    # or
+    yarn add @legendapp/state@latest
+    # or
+    bun add @legendapp/state@latest
+    ```
+  </Step>
+  
+  <Step title="Fix TypeScript errors">
+    Run TypeScript and fix any new errors. Most will be legitimate issues the new types caught:
+    
+    ```bash
+    npm run typecheck
+    ```
+  </Step>
+  
+  <Step title="Update computeds">
+    Replace `computed()` with `observable()` with a function:
+    
+    ```typescript
+    // Before
+    const fullName$ = computed(() => ...);
+    
+    // After
+    const fullName$ = observable(() => ...);
+    ```
+  </Step>
+  
+  <Step title="Migrate persistence">
+    Replace old persist code with new synced system:
+    
+    ```typescript
+    // Before
+    persistObservable(state$, { local: 'localStorage', name: 'state' });
+    
+    // After - choose appropriate sync plugin
+    const state$ = observable(syncedKeel({ /* ... */ }));
+    ```
+  </Step>
+  
+  <Step title="Update useObservable">
+    Add `.peek()` to any observable accesses in `useObservable` functions if you want them non-reactive:
+    
+    ```typescript
+    // If you want non-reactive initialization
+    const local$ = useObservable(() => global$.value.peek());
+    ```
+  </Step>
+  
+  <Step title="Fix method chaining">
+    Remove any chaining after `.set()` or `.toggle()`:
+    
+    ```typescript
+    // Before
+    state$.count.set(5).get();
+    
+    // After
+    state$.count.set(5);
+    const value = state$.count.get();
+    ```
+  </Step>
+  
+  <Step title="Rename callbacks">
+    Replace `onSet` with `onAfterSet`:
+    
+    ```typescript
+    // Before
+    state$.onSet(() => {});
+    
+    // After
+    state$.onAfterSet(() => {});
+    ```
+  </Step>
+  
+  <Step title="Update renamed functions">
+    Replace renamed functions:
+    
+    ```typescript
+    // Before
+    import { enableDirectAccess } from '@legendapp/state';
+    
+    // After
+    import { enable$GetSet } from '@legendapp/state/config/enable$GetSet';
+    ```
+  </Step>
+  
+  <Step title="Test thoroughly">
+    Test your application to ensure everything works correctly with the new behavior.
+  </Step>
+</Steps>
+
+## Common Migration Issues
+
+<Accordion title="Type errors with observables">
+  The new type system is stricter. Make sure you're:
+  - Calling `.get()` when you need the value
+  - Not mixing Observable and plain types
+  - Using proper nullable types (`T | undefined | null`)
+</Accordion>
+
+<Accordion title="Computeds not updating">
+  In v3, computeds only re-compute when observed. Make sure something is actually listening:
+  
+  ```typescript
+  const computed$ = observable(() => state$.value.get());
+  
+  // This activates the computed
+  observe(() => {
+    console.log(computed$.get());
+  });
+  ```
+</Accordion>
+
+<Accordion title="Persistence not working">
+  The old persist system is completely removed. You must migrate to the new synced system:
+  
+  ```typescript
+  // Use one of the sync plugins
+  import { syncedKeel } from '@legendapp/state/sync-plugins/keel';
+  ```
+</Accordion>
+
+<Accordion title="useObservable behaving differently">
+  Functions in `useObservable` are now reactive. Use `.peek()` for non-reactive access:
+  
+  ```typescript
+  // Reactive (v3 behavior)
+  const value$ = useObservable(() => state$.value.get());
+  
+  // Non-reactive (v2 behavior)
+  const value$ = useObservable(() => state$.value.peek());
+  ```
+</Accordion>
+
+## Getting Help
+
+If you encounter issues during migration:
+
+1. Check the [official migration guide](https://www.legendapp.com/open-source/state/v3/other/migrating/)
+2. Review the [CHANGELOG](/changelog)
+3. Ask in the [Discord community](https://discord.gg/5CBaNtADNX)
+4. Open an issue on [GitHub](https://github.com/LegendApp/legend-state)
+
+## Summary
+
+<Info>
+  **Migration Checklist**:
+  - ✓ Update to latest version
+  - ✓ Fix TypeScript errors
+  - ✓ Replace `computed()` with `observable(() => ...)`
+  - ✓ Migrate from old persist to new synced system
+  - ✓ Add `.peek()` to non-reactive `useObservable` functions
+  - ✓ Remove method chaining after `.set()`/`.toggle()`
+  - ✓ Rename `onSet` to `onAfterSet`
+  - ✓ Update renamed functions
+  - ✓ Test thoroughly
+</Info>
+
+## Next Steps
+
+- Learn about [Performance optimization](/guides/performance)
+- Explore [React Native setup](/guides/react-native)
+- Master [TypeScript usage](/guides/typescript)

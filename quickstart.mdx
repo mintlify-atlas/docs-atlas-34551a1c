@@ -1,80 +1,302 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quickstart
+description: Get started with Legend-State in minutes
 ---
 
-## Get started in three steps
+Get up and running with Legend-State in just a few minutes. This guide will walk you through installation, basic usage, and your first reactive component.
 
-Get your documentation site running locally and make your first customization.
+## Installation
 
-### Step 1: Set up your local environment
+Install Legend-State using your preferred package manager:
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+<CodeGroup>
+```bash npm
+npm install @legendapp/state
+```
 
-### Step 2: Deploy your changes
+```bash yarn
+yarn add @legendapp/state
+```
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+```bash pnpm
+pnpm add @legendapp/state
+```
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+```bash bun
+bun add @legendapp/state
+```
+</CodeGroup>
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+## Basic usage
 
-### Step 3: Go live
+<Steps>
+  <Step title="Create an observable">
+    Create observables to hold your state. Observables can contain any value - primitives, objects, arrays, or even functions.
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+    ```typescript
+    import { observable } from '@legendapp/state';
+
+    // Primitive observable
+    const count$ = observable(0);
+
+    // Object observable
+    const user$ = observable({
+      name: 'Alice',
+      age: 30
+    });
+
+    // Array observable
+    const todos$ = observable([
+      { id: 1, text: 'Learn Legend-State', completed: false },
+      { id: 2, text: 'Build something awesome', completed: false }
+    ]);
+    ```
+  </Step>
+
+  <Step title="Get and set values">
+    Use `get()` to read values and `set()` to update them. It's that simple!
+
+    ```typescript
+    // Get values
+    console.log(count$.get()); // 0
+    console.log(user$.name.get()); // 'Alice'
+
+    // Set values
+    count$.set(1);
+    user$.name.set('Bob');
+
+    // Update with a function
+    count$.set(prev => prev + 1);
+
+    // Update nested objects
+    user$.set({ name: 'Charlie', age: 25 });
+    ```
+  </Step>
+
+  <Step title="Observe changes">
+    React to changes with the `observe()` function. It runs immediately and whenever tracked observables change.
+
+    ```typescript
+    import { observe } from '@legendapp/state';
+
+    // Observe runs whenever count$ changes
+    observe(() => {
+      console.log('Count changed:', count$.get());
+    });
+
+    // Will log: "Count changed: 2"
+    count$.set(2);
+    ```
+  </Step>
+
+  <Step title="Create computed observables">
+    Computed observables automatically update when their dependencies change.
+
+    ```typescript
+    // Computed observable using a function
+    const doubled$ = observable(() => count$.get() * 2);
+
+    console.log(doubled$.get()); // 4 (count is 2)
+
+    count$.set(5);
+    console.log(doubled$.get()); // 10
+    ```
+  </Step>
+</Steps>
+
+## React integration
+
+Legend-State provides powerful React integration with hooks and components for building reactive UIs.
+
+<Steps>
+  <Step title="Use the observer HOC">
+    The `observer` HOC makes components automatically re-render when observables they access change.
+
+    ```tsx
+    import { observable } from '@legendapp/state';
+    import { observer } from '@legendapp/state/react';
+
+    const state$ = observable({
+      count: 0
+    });
+
+    const Counter = observer(function Counter() {
+      // Component automatically tracks access to count
+      const count = state$.count.get();
+
+      return (
+        <div>
+          <p>Count: {count}</p>
+          <button onClick={() => state$.count.set(c => c + 1)}>
+            Increment
+          </button>
+        </div>
+      );
+    });
+    ```
+  </Step>
+
+  <Step title="Use the useObservable hook">
+    Create local component state with `useObservable()`. It works just like observables but is scoped to the component.
+
+    ```tsx
+    import { useObservable } from '@legendapp/state/react';
+
+    function TodoList() {
+      const todos$ = useObservable([
+        { id: 1, text: 'Learn Legend-State', completed: false }
+      ]);
+
+      const addTodo = () => {
+        const newTodo = {
+          id: Date.now(),
+          text: 'New todo',
+          completed: false
+        };
+        todos$.set(prev => [...prev, newTodo]);
+      };
+
+      return (
+        <div>
+          {todos$.get().map(todo => (
+            <div key={todo.id}>{todo.text}</div>
+          ))}
+          <button onClick={addTodo}>Add Todo</button>
+        </div>
+      );
+    }
+    ```
+  </Step>
+
+  <Step title="Use fine-grained rendering">
+    The `Memo` component enables fine-grained reactivity - it updates itself without re-rendering the parent component.
+
+    ```tsx
+    import { observable } from '@legendapp/state';
+    import { Memo } from '@legendapp/state/react';
+
+    const state$ = observable({ count: 0 });
+
+    function FineGrainedCounter() {
+      // This component NEVER re-renders!
+      return (
+        <div>
+          Count: <Memo>{state$.count}</Memo>
+          <button onClick={() => state$.count.set(c => c + 1)}>
+            Increment
+          </button>
+        </div>
+      );
+    }
+    ```
+  </Step>
+</Steps>
+
+## Complete example
+
+Here's a complete todo list example that demonstrates multiple concepts:
+
+```tsx
+import { observable } from '@legendapp/state';
+import { observer, useObservable, For, Memo } from '@legendapp/state/react';
+
+const state$ = observable({
+  todos: []
+});
+
+const TodoApp = observer(function TodoApp() {
+  const input$ = useObservable('');
+
+  const addTodo = () => {
+    const text = input$.get();
+    if (!text.trim()) return;
+
+    state$.todos.set(prev => [
+      ...prev,
+      { id: Date.now(), text, completed: false }
+    ]);
+    input$.set('');
+  };
+
+  const toggleTodo = (id: number) => {
+    const todo = state$.todos.find(t => t.id.peek() === id);
+    if (todo) {
+      todo.completed.set(c => !c);
+    }
+  };
+
+  return (
+    <div>
+      <h1>Todo List</h1>
+      
+      <div>
+        <input
+          value={input$.get()}
+          onChange={e => input$.set(e.target.value)}
+          placeholder="Add a todo..."
+        />
+        <button onClick={addTodo}>Add</button>
+      </div>
+
+      <For each={state$.todos}>
+        {todo$ => (
+          <div>
+            <input
+              type="checkbox"
+              checked={todo$.completed.get()}
+              onChange={() => toggleTodo(todo$.id.peek())}
+            />
+            <span
+              style={{
+                textDecoration: todo$.completed.get() ? 'line-through' : 'none'
+              }}
+            >
+              <Memo>{todo$.text}</Memo>
+            </span>
+          </div>
+        )}
+      </For>
+    </div>
+  );
+});
+```
+
+## Key concepts
+
+<CardGroup cols={2}>
+  <Card title="Observables" icon="eye" href="/core/observables">
+    Learn about creating and working with observables
+  </Card>
+  
+  <Card title="React Hooks" icon="react" href="/react/hooks">
+    Explore React integration hooks like useObservable and useSelector
+  </Card>
+  
+  <Card title="Fine-Grained Rendering" icon="bolt" href="/react/fine-grained-rendering">
+    Master fine-grained reactivity for maximum performance
+  </Card>
+  
+  <Card title="Persistence & Sync" icon="database" href="/sync/overview">
+    Set up automatic persistence and real-time sync
+  </Card>
+</CardGroup>
 
 ## Next steps
 
-Now that you have your docs running, explore these key features:
-
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="Core concepts" icon="book" href="/core/observables" horizontal>
+    Dive deep into observables, computed values, and reactivity
+  </Card>
+  
+  <Card title="React integration" icon="react" href="/react/overview" horizontal>
+    Learn about all React hooks and components
+  </Card>
+  
+  <Card title="Sync & persistence" icon="cloud" href="/sync/overview" horizontal>
+    Add local-first sync and persistence to your app
+  </Card>
+  
+  <Card title="TypeScript guide" icon="code" href="/guides/typescript" horizontal>
+    Get the most out of TypeScript with Legend-State
+  </Card>
 </CardGroup>
-
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>

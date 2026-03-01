@@ -1,0 +1,332 @@
+---
+title: Show
+description: Conditionally render components based on observable values
+---
+
+`Show` is a React component that conditionally renders children based on an observable condition, with support for `else` fallback and value passing.
+
+## Usage
+
+```tsx
+import { Show } from '@legendapp/state/react'
+import { state$ } from './state'
+
+function Component() {
+  return (
+    <Show if={state$.isLoggedIn}>
+      <UserDashboard />
+    </Show>
+  )
+}
+```
+
+## Signature
+
+```typescript
+function Show<T>(props: {
+  if?: Selector<T>
+  ifReady?: Selector<T>
+  else?: ReactNode | (() => ReactNode)
+  $value?: Observable<T>
+  wrap?: FC<{ children: ReactNode }>
+  children: ReactNode | ((value?: T) => ReactNode)
+}): ReactElement
+```
+
+## Props
+
+<ParamField path="if" type="Selector<T>" optional>
+  A selector or observable whose value determines whether to show the children. Shows children when the value is truthy.
+  
+  Cannot be used together with `ifReady`.
+</ParamField>
+
+<ParamField path="ifReady" type="Selector<T>" optional>
+  Similar to `if`, but specifically checks if the observable value is "ready" (not `undefined`, not a pending Promise). Useful for async observables.
+  
+  Cannot be used together with `if`.
+</ParamField>
+
+<ParamField path="else" type="ReactNode | (() => ReactNode)" optional>
+  Content to render when the condition is false. Can be:
+  - A React node (JSX)
+  - A function that returns a React node
+  
+  If omitted, nothing is rendered when the condition is false.
+</ParamField>
+
+<ParamField path="$value" type="Observable<T>" optional>
+  An observable to pass to the children function. When provided, the children function receives `$value.get()` instead of the condition value.
+</ParamField>
+
+<ParamField path="wrap" type="FC<{ children: ReactNode }>" optional>
+  A wrapper component to wrap the rendered children. Useful for adding context providers or layout components.
+</ParamField>
+
+<ParamField path="children" type="ReactNode | ((value?: T) => ReactNode)" required>
+  The content to render when the condition is truthy. Can be:
+  - A React node (JSX)
+  - A function that receives the condition value and returns a React node
+</ParamField>
+
+## Returns
+
+<ResponseField name="ReactElement" type="ReactElement">
+  The rendered result based on the condition - either the children, the else content, or the wrapped children.
+</ResponseField>
+
+## Examples
+
+### Basic conditional rendering
+
+```tsx
+<Show if={state$.isLoggedIn}>
+  <div>Welcome back!</div>
+</Show>
+```
+
+### With else clause
+
+```tsx
+<Show
+  if={state$.isLoggedIn}
+  else={<div>Please log in</div>}
+>
+  <div>Welcome back!</div>
+</Show>
+```
+
+### With else function
+
+```tsx
+<Show
+  if={state$.hasData}
+  else={() => {
+    console.log('No data available')
+    return <EmptyState />
+  }}
+>
+  <DataDisplay />
+</Show>
+```
+
+### With children function
+
+```tsx
+<Show if={state$.currentUser}>
+  {(user) => (
+    <div>
+      <h1>Hello, {user.name}!</h1>
+      <p>Email: {user.email}</p>
+    </div>
+  )}
+</Show>
+```
+
+### Check if observable is ready
+
+```tsx
+// Shows loading until data is loaded
+<Show
+  ifReady={state$.userData}
+  else={<Spinner />}
+>
+  {(data) => <UserProfile data={data} />}
+</Show>
+```
+
+### With custom value observable
+
+```tsx
+<Show
+  if={state$.selectedId}
+  $value={state$.items.find(item => item.id === state$.selectedId.get())}
+>
+  {(item) => <ItemDetails item={item} />}
+</Show>
+```
+
+### With wrapper component
+
+```tsx
+const ErrorBoundary = ({ children }) => (
+  <div className="error-boundary">{children}</div>
+)
+
+<Show
+  if={state$.hasError}
+  wrap={ErrorBoundary}
+>
+  <ErrorMessage />
+</Show>
+```
+
+### Complex conditions
+
+```tsx
+<Show if={() => state$.user.age.get() >= 18}>
+  <AdultContent />
+</Show>
+```
+
+### Nested Show components
+
+```tsx
+<Show if={state$.isLoggedIn}>
+  <Show if={state$.isPremium} else={<FreeTierBanner />}>
+    <PremiumFeatures />
+  </Show>
+</Show>
+```
+
+### With complex else content
+
+```tsx
+<Show
+  if={state$.items.length > 0}
+  else={
+    <div>
+      <h2>No items found</h2>
+      <button onClick={loadItems}>Load Items</button>
+    </div>
+  }
+>
+  {() => (
+    <div>
+      {state$.items.get().map(item => (
+        <ItemCard key={item.id} item={item} />
+      ))}
+    </div>
+  )}
+</Show>
+```
+
+### Loading states with ifReady
+
+```tsx
+const data$ = observable(async () => {
+  const response = await fetch('/api/data')
+  return response.json()
+})
+
+<Show
+  ifReady={data$}
+  else={<LoadingSpinner />}
+>
+  {(data) => <DataTable data={data} />}
+</Show>
+```
+
+## Behavior
+
+### Conditional tracking
+
+Only the active branch (children or else) is tracked and rendered:
+
+```tsx
+<Show if={state$.showAdvanced}>
+  {/* These observables are only tracked when showAdvanced is true */}
+  <AdvancedSettings config={state$.advancedConfig.get()} />
+</Show>
+```
+
+### Value passing
+
+When children is a function:
+- Without `$value`: Receives the condition value
+- With `$value`: Receives the `$value` observable's value
+
+```tsx
+// Receives condition value
+<Show if={state$.user}>
+  {(user) => <div>{user.name}</div>}
+</Show>
+
+// Receives $value
+<Show if={state$.userId} $value={state$.users[state$.userId.get()]}>
+  {(user) => <div>{user.name}</div>}
+</Show>
+```
+
+### ifReady behavior
+
+`ifReady` uses `isObservableValueReady()` internally to check if the value is:
+- Not `undefined`
+- Not a pending Promise
+- Actually has a value
+
+This is particularly useful for async observables:
+
+```tsx
+const asyncData$ = observable(async () => fetchData())
+
+// Shows else until Promise resolves
+<Show ifReady={asyncData$} else={<Loading />}>
+  {(data) => <Display data={data} />}
+</Show>
+```
+
+### Wrapper usage
+
+The `wrap` prop is useful for providing context or layout:
+
+```tsx
+const AuthProvider = ({ children }) => (
+  <AuthContext.Provider value={authService}>
+    {children}
+  </AuthContext.Provider>
+)
+
+<Show if={state$.requiresAuth} wrap={AuthProvider}>
+  <ProtectedContent />
+</Show>
+```
+
+## Performance
+
+`Show` uses `useSelector` internally with `skipCheck: true`, which means:
+- Re-renders occur when any tracked observable changes
+- No deep equality checking on return values
+- Efficient for conditional rendering logic
+
+## Comparison with JavaScript conditionals
+
+### Show component
+```tsx
+<Show if={state$.isVisible} else={<Fallback />}>
+  <Content />
+</Show>
+```
+
+### Equivalent JSX
+```tsx
+{useSelector(state$.isVisible) ? <Content /> : <Fallback />}
+```
+
+### Advantages of Show:
+- More declarative and readable
+- Built-in `ifReady` for async observables
+- `wrap` prop for providers/context
+- Children function receives typed value
+- Cleaner syntax for complex conditions
+
+## Type Parameters
+
+<ParamField path="T" type="type">
+  The type of the condition value. Inferred from the `if` or `ifReady` selector.
+</ParamField>
+
+## Notes
+
+- Cannot use both `if` and `ifReady` props simultaneously
+- `else` can be a function for lazy evaluation
+- Children function receives `undefined` as value if `$value` is not provided and condition is a boolean
+- Wrapper component must accept a `children` prop
+- All props except children are tracked with `useSelector`
+
+## Related
+
+- [Switch](/api/react/switch) - Multi-case conditional rendering
+- [For](/api/react/for) - List rendering with observables
+- [Memo](/api/react/memo) - Memoize computed sections
+- [observer](/api/react/observer) - Automatic observable tracking

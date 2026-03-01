@@ -1,0 +1,154 @@
+---
+title: useObservable
+description: Create a local observable within a React component
+---
+
+`useObservable` is a React hook that creates a new observable that persists for the lifetime of the component.
+
+## Usage
+
+```tsx
+import { useObservable } from '@legendapp/state/react'
+
+function Component() {
+  const state$ = useObservable({ count: 0 })
+  
+  return (
+    <div>
+      <div>Count: {state$.count.get()}</div>
+      <button onClick={() => state$.count.set(v => v + 1)}>
+        Increment
+      </button>
+    </div>
+  )
+}
+```
+
+## Signature
+
+```typescript
+function useObservable<T>(): Observable<T | undefined>
+
+function useObservable<T>(
+  value: Promise<RecursiveValueOrFunction<T>> | (() => RecursiveValueOrFunction<T>) | RecursiveValueOrFunction<T>,
+  deps?: DependencyList
+): Observable<T>
+
+function useObservable<T>(
+  value: T,
+  deps?: DependencyList
+): Observable<T>
+```
+
+## Parameters
+
+<ParamField path="value" type="T | (() => T) | (() => Promise<T>)" optional>
+  The initial value of the observable. Can be:
+  - A plain value
+  - A function that returns the initial value
+  - A function that returns a Promise (for async initialization)
+  - A Promise that resolves to the initial value
+  
+  If omitted, the observable will be initialized as `undefined`.
+</ParamField>
+
+<ParamField path="deps" type="DependencyList" optional>
+  An optional dependency array similar to `useEffect`. When provided:
+  - If `value` is a function with one parameter (a lookup table), it will be called with a parameter whenever deps change
+  - Otherwise, the function will be re-evaluated whenever deps change
+  
+  This allows the observable to reactively update based on component props or state.
+</ParamField>
+
+## Returns
+
+<ResponseField name="Observable<T>" type="Observable<T>">
+  An observable object that persists for the lifetime of the component. The observable will be automatically cleaned up when the component unmounts.
+</ResponseField>
+
+## Examples
+
+### Basic usage
+
+```tsx
+const state$ = useObservable({ count: 0, name: 'Alice' })
+
+// Get values
+const count = state$.count.get()
+
+// Set values
+state$.count.set(5)
+state$.name.set('Bob')
+```
+
+### With function initializer
+
+```tsx
+// Lazy initialization - function only runs once
+const state$ = useObservable(() => ({
+  count: expensiveCalculation(),
+  timestamp: Date.now()
+}))
+```
+
+### With async initialization
+
+```tsx
+const data$ = useObservable(async () => {
+  const response = await fetch('/api/data')
+  return response.json()
+})
+
+// Observable will be undefined initially, then populated when Promise resolves
+```
+
+### With dependencies
+
+```tsx
+function UserProfile({ userId }) {
+  // Observable updates when userId prop changes
+  const user$ = useObservable(
+    () => ({ id: userId, name: '', loading: true }),
+    [userId]
+  )
+  
+  useObserve(() => {
+    fetchUser(userId).then(data => user$.set(data))
+  }, [userId])
+  
+  return <div>{user$.name.get()}</div>
+}
+```
+
+### With lookup table
+
+```tsx
+function Component({ userId }) {
+  // Function with one parameter is treated as a lookup table
+  const getUserData$ = useObservable(
+    (id: string) => userCache[id],
+    [userId]
+  )
+  
+  const userData = getUserData$(userId).get()
+}
+```
+
+## Notes
+
+- The observable is created on the first render and persists for the component's lifetime
+- Tracked observables are automatically deactivated when the component unmounts
+- If you need to use the observable across multiple components, create it outside the component with `observable()` instead
+- Also exported as `useLocalObservable` for compatibility
+
+## Type Parameters
+
+<ParamField path="T" type="type">
+  The type of the observable's value. When no initial value is provided, the observable will have type `Observable<T | undefined>`.
+</ParamField>
+
+## Related
+
+- [useComputed](/api/react/use-computed) - Create a computed observable
+- [useSelector](/api/react/use-selector) - Subscribe to observable changes
+- [useObserve](/api/react/use-observe) - Run side effects when observables change

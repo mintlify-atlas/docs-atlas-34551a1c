@@ -1,0 +1,517 @@
+---
+title: Firebase Plugin
+description: Sync observables with Firebase Realtime Database
+---
+
+The Firebase plugin provides seamless integration with Firebase Realtime Database, including CRUD operations, real-time subscriptions, and field transformations.
+
+## Installation
+
+```bash
+npm install @legendapp/state firebase
+```
+
+## Setup
+
+```ts
+import { initializeApp } from 'firebase/app'
+import { configureSyncedFirebase } from '@legendapp/state/sync-plugins/firebase'
+
+const app = initializeApp({
+  apiKey: 'YOUR_API_KEY',
+  authDomain: 'your-app.firebaseapp.com',
+  databaseURL: 'https://your-app.firebaseio.com',
+  projectId: 'your-app'
+})
+
+configureSyncedFirebase({
+  realtime: true,
+  requireAuth: true
+})
+```
+
+## Usage
+
+```ts
+import { syncedFirebase } from '@legendapp/state/sync-plugins/firebase'
+import { getAuth } from 'firebase/auth'
+
+const posts$ = syncedFirebase({
+  refPath: (uid) => `users/${uid}/posts`,
+  as: 'object'
+})
+```
+
+## Configuration
+
+<ParamField path="refPath" type="(uid: string | undefined) => string" required>
+  Function that returns the Firebase database path. Receives current user ID.
+  
+  ```ts
+  // User-specific data
+  refPath: (uid) => `users/${uid}/posts`
+  
+  // Global data
+  refPath: () => 'posts'
+  
+  // Dynamic path
+  refPath: (uid) => `tenants/${tenantId$.get()}/data`
+  ```
+</ParamField>
+
+<ParamField path="query" type="(ref: DatabaseReference) => DatabaseReference | Query">
+  Additional query constraints
+  
+  ```ts
+  import { orderByChild, limitToLast } from 'firebase/database'
+  
+  query: (ref) => query(ref, orderByChild('createdAt'), limitToLast(20))
+  ```
+</ParamField>
+
+<ParamField path="as" type="'object' | 'array' | 'Map' | 'value'" default="object">
+  How to structure the data
+  - `object`: `{ [id]: item }`
+  - `array`: `[item, item]`
+  - `Map`: `Map<id, item>`
+  - `value`: Single value (not a collection)
+</ParamField>
+
+<ParamField path="fieldId" type="string" default="id">
+  Name of the ID field
+</ParamField>
+
+<ParamField path="fieldCreatedAt" type="string">
+  Field tracking creation time
+</ParamField>
+
+<ParamField path="fieldUpdatedAt" type="string" default="@">
+  Field tracking update time (defaults to '@' which is special in Firebase)
+</ParamField>
+
+<ParamField path="fieldDeleted" type="string">
+  Field for soft deletes
+</ParamField>
+
+<ParamField path="fieldTransforms" type="FieldTransforms">
+  Map local field names to Firebase field names
+  
+  ```ts
+  fieldTransforms: {
+    userId: 'user_id',
+    createdAt: 'created_at'
+  }
+  ```
+</ParamField>
+
+<ParamField path="realtime" type="boolean" default="true">
+  Enable real-time subscriptions
+</ParamField>
+
+<ParamField path="requireAuth" type="boolean" default="true">
+  Wait for authentication before syncing
+</ParamField>
+
+<ParamField path="readonly" type="boolean" default="false">
+  Make observable read-only (no writes to Firebase)
+</ParamField>
+
+<ParamField path="changesSince" type="'all' | 'last-sync'" default="all">
+  Query strategy
+</ParamField>
+
+<ParamField path="transform" type="SyncTransform">
+  Transform data between local and remote formats
+</ParamField>
+
+<ParamField path="persist" type="PersistOptions">
+  Local persistence configuration
+</ParamField>
+
+## Examples
+
+### Basic Usage
+
+```ts
+import { syncedFirebase } from '@legendapp/state/sync-plugins/firebase'
+
+const posts$ = syncedFirebase({
+  refPath: (uid) => `users/${uid}/posts`,
+  as: 'object'
+})
+
+// Automatically syncs with Firebase
+const posts = posts$.get()
+```
+
+### Real-time Sync
+
+```tsx
+import { observer } from '@legendapp/state/react'
+
+const messages$ = syncedFirebase({
+  refPath: () => 'chat/messages',
+  realtime: true,  // Default
+  as: 'array'
+})
+
+const ChatMessages = observer(function ChatMessages() {
+  const messages = messages$.get()
+  
+  return (
+    <div>
+      {messages.map(msg => (
+        <div key={msg.id}>{msg.text}</div>
+      ))}
+    </div>
+  )
+})
+
+// Automatically updates in real-time
+```
+
+### CRUD Operations
+
+```ts
+const posts$ = syncedFirebase({
+  refPath: (uid) => `users/${uid}/posts`,
+  as: 'object'
+})
+
+// Create
+posts$['new-id'].set({
+  id: 'new-id',
+  title: 'New Post',
+  content: 'Content here'
+})
+
+// Update
+posts$['post-1'].title.set('Updated Title')
+
+// Delete
+posts$['post-1'].delete()
+
+// Changes sync to Firebase automatically
+```
+
+### With Queries
+
+```ts
+import { orderByChild, limitToLast } from 'firebase/database'
+
+const recentPosts$ = syncedFirebase({
+  refPath: () => 'posts',
+  query: (ref) => query(
+    ref,
+    orderByChild('createdAt'),
+    limitToLast(20)
+  ),
+  as: 'array'
+})
+```
+
+### Single Value
+
+```ts
+// For non-collection data
+const settings$ = syncedFirebase({
+  refPath: (uid) => `users/${uid}/settings`,
+  as: 'value'
+})
+
+// Returns single object (not array/object of items)
+const settings = settings$.get()
+console.log(settings.theme)
+```
+
+### User-Specific Data
+
+```ts
+import { getAuth } from 'firebase/auth'
+
+const userData$ = syncedFirebase({
+  refPath: (uid) => `users/${uid}/data`,
+  requireAuth: true  // Wait for auth
+})
+
+// Sign in
+await getAuth().signInWithEmailAndPassword('user@example.com', 'password')
+
+// Automatically loads user's data
+```
+
+### Incremental Sync
+
+```ts
+const posts$ = syncedFirebase({
+  refPath: () => 'posts',
+  changesSince: 'last-sync',
+  fieldUpdatedAt: '@',  // Special Firebase timestamp field
+  persist: {
+    name: 'posts',
+    plugin: ObservablePersistIndexedDB,
+    retrySync: true
+  }
+})
+
+// Only fetches posts updated since last sync
+```
+
+### Server Timestamps
+
+```ts
+import { serverTimestamp } from 'firebase/database'
+
+const posts$ = syncedFirebase({
+  refPath: () => 'posts',
+  fieldCreatedAt: 'createdAt',
+  fieldUpdatedAt: '@',
+  as: 'object'
+})
+
+// Firebase automatically sets timestamps
+posts$['new-post'].set({
+  id: 'new-post',
+  title: 'Title'
+  // createdAt and @ will be set by Firebase
+})
+```
+
+### Field Transforms
+
+```ts
+import { FieldTransforms } from '@legendapp/state/sync-plugins/firebase'
+
+type LocalPost = {
+  id: string
+  userId: string
+  createdAt: number
+}
+
+type FirebasePost = {
+  id: string
+  user_id: string  // snake_case in Firebase
+  created_at: number
+}
+
+const posts$ = syncedFirebase<FirebasePost, LocalPost>({
+  refPath: () => 'posts',
+  fieldTransforms: {
+    userId: 'user_id',      // Local -> Firebase
+    createdAt: 'created_at'
+  },
+  as: 'object'
+})
+
+// Use camelCase locally
+posts$['post-1'].userId.set('user-123')
+
+// Saved as snake_case in Firebase
+// { user_id: 'user-123' }
+```
+
+### Soft Deletes
+
+```ts
+const posts$ = syncedFirebase({
+  refPath: () => 'posts',
+  fieldDeleted: 'deleted',
+  as: 'object'
+})
+
+// Delete sets deleted: true
+posts$['post-1'].delete()
+
+// In Firebase: { id: 'post-1', deleted: true }
+```
+
+### Read-Only
+
+```ts
+const leaderboard$ = syncedFirebase({
+  refPath: () => 'leaderboard',
+  readonly: true,  // No writes
+  as: 'array'
+})
+
+// Can't modify
+// leaderboard$[0].score.set(100)  // No-op or error
+```
+
+### With Persistence
+
+```ts
+import { ObservablePersistIndexedDB } from '@legendapp/state/persist-plugins/indexeddb'
+
+const posts$ = syncedFirebase({
+  refPath: () => 'posts',
+  persist: {
+    name: 'posts',
+    plugin: ObservablePersistIndexedDB
+  }
+})
+
+// 1. Loads from IndexedDB (instant)
+// 2. Syncs with Firebase in background
+// 3. Subscribes to real-time updates
+// 4. Saves changes to both IndexedDB and Firebase
+```
+
+### Multi-Tenant
+
+```ts
+const tenantId$ = observable('tenant-123')
+
+const data$ = syncedFirebase({
+  refPath: () => `tenants/${tenantId$.get()}/data`,
+  persist: {
+    name: computed(() => `data-${tenantId$.get()}`)
+  }
+})
+
+// Switch tenant - automatically refetches
+tenantId$.set('tenant-456')
+```
+
+### Error Handling
+
+```ts
+const posts$ = syncedFirebase({
+  refPath: () => 'posts',
+  onError: (error, { source, type, retry }) => {
+    console.error(`Firebase ${source} error:`, error)
+    
+    if (error.message.includes('permission-denied')) {
+      showNotification('You do not have permission')
+    } else if (error.message.includes('network')) {
+      // Will retry automatically
+    } else {
+      showNotification(`Failed to ${source}`)
+    }
+  }
+})
+```
+
+### Offline Support
+
+```ts
+import { getDatabase, enablePersistence } from 'firebase/database'
+
+// Enable Firebase offline persistence
+const db = getDatabase()
+enablePersistence(db)
+
+const posts$ = syncedFirebase({
+  refPath: () => 'posts',
+  persist: {
+    name: 'posts',
+    plugin: ObservablePersistIndexedDB,
+    retrySync: true
+  }
+})
+
+// Works offline with both Firebase and Legend-State caching
+```
+
+## Real-time Subscriptions
+
+Firebase real-time automatically:
+- Subscribes using `onChildAdded`, `onChildChanged`, `onChildRemoved`
+- Updates observable when data changes
+- Handles concurrent edits with Firebase's conflict resolution
+- Unsubscribes when observable is no longer observed
+
+```ts
+const messages$ = syncedFirebase({
+  refPath: () => 'chat/messages',
+  realtime: true,
+  as: 'array'
+})
+
+// Real-time updates are automatic
+// No manual subscription management needed
+```
+
+## Write Lifecycle
+
+Firebase writes go through a careful lifecycle:
+
+1. **Local update**: Change applied to observable immediately
+2. **Optimistic UI**: User sees change right away
+3. **Firebase write**: Change sent to Firebase
+4. **Server confirmation**: Firebase confirms write
+5. **Server value**: Firebase sends back server value (e.g., timestamps)
+6. **Final update**: Observable updated with server value
+
+This ensures:
+- Fast UI updates
+- Conflict resolution
+- Server-generated values (timestamps, IDs)
+
+## Security Rules
+
+Firebase security rules are automatically respected:
+
+```json
+// Firebase rules
+{
+  "rules": {
+    "users": {
+      "$uid": {
+        ".read": "$uid === auth.uid",
+        ".write": "$uid === auth.uid"
+      }
+    }
+  }
+}
+```
+
+```ts
+// Observable automatically respects rules
+const myData$ = syncedFirebase({
+  refPath: (uid) => `users/${uid}/data`
+})
+
+// Can only access own data (enforced by rules)
+```
+
+## Best Practices
+
+1. **Use security rules**: Always enforce access control in Firebase rules
+2. **Enable offline persistence**: Use Firebase offline mode + Legend-State caching
+3. **Use fieldTransforms**: Keep local code clean with camelCase
+4. **Handle auth**: Use `requireAuth: true` for user-specific data
+5. **Query efficiently**: Use Firebase queries to limit data transfer
+6. **Monitor writes**: Use `onError` to handle write failures
+
+## Migration from Direct Firebase
+
+```ts
+// Old: Direct Firebase
+import { ref, onValue, set } from 'firebase/database'
+
+const postsRef = ref(db, 'posts')
+
+onValue(postsRef, (snapshot) => {
+  const data = snapshot.val()
+  // Manual state management
+})
+
+set(postsRef, newData)
+
+// New: syncedFirebase
+const posts$ = syncedFirebase({
+  refPath: () => 'posts'
+})
+
+// Automatic state management
+// Real-time updates built-in
+// Local caching available
+```
+
+## See Also
+
+- [Supabase Plugin](/api/sync-plugins/supabase) - Similar features for Supabase
+- [Keel Plugin](/api/sync-plugins/keel) - Keel backend integration
+- [synced()](/api/sync/synced) - Core sync functionality
+- [Firebase Documentation](https://firebase.google.com/docs/database) - Firebase Realtime Database docs

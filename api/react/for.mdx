@@ -1,0 +1,428 @@
+---
+title: For
+description: Efficiently render lists from observable arrays, objects, or Maps
+---
+
+`For` is a React component that efficiently renders lists from observable collections, automatically handling keys and optimizing re-renders.
+
+## Usage
+
+```tsx
+import { For } from '@legendapp/state/react'
+import { state$ } from './state'
+
+function TodoList() {
+  return (
+    <For each={state$.todos}>
+      {(todo$, id) => (
+        <div>
+          <input
+            type="checkbox"
+            checked={todo$.completed.get()}
+            onChange={(e) => todo$.completed.set(e.target.checked)}
+          />
+          <span>{todo$.text.get()}</span>
+        </div>
+      )}
+    </For>
+  )
+}
+```
+
+## Signature
+
+```typescript
+function For<T, TProps>({
+  each,
+  optimized,
+  item,
+  itemProps,
+  sortValues,
+  children
+}: {
+  each?: ObservableParam<T[] | Record<any, T> | Map<any, T>>
+  optimized?: boolean
+  item?: FC<ForItemProps<T, TProps>>
+  itemProps?: TProps
+  sortValues?: (A: T, B: T, AKey: string, BKey: string) => number
+  children?: (value: Observable<T>, id: string | undefined) => ReactElement
+}): ReactElement | null
+```
+
+## Props
+
+<ParamField path="each" type="ObservableParam<T[] | Record<any, T> | Map<any, T>>" optional>
+  The observable collection to iterate over. Can be:
+  - An observable array: `state$.todos`
+  - An observable object: `state$.usersById`
+  - An observable Map: `state$.itemsMap`
+  
+  If omitted or undefined, renders nothing.
+</ParamField>
+
+<ParamField path="optimized" type="boolean" optional default="false">
+  Enable optimized rendering mode. When `true`, the list only re-renders when items are added, removed, or reordered - not when individual item properties change.
+  
+  Requires items to be objects with stable identity.
+</ParamField>
+
+<ParamField path="item" type="FC<ForItemProps<T, TProps>>" optional>
+  A component to render for each item. Receives props:
+  - `item$`: Observable for the item
+  - `id`: The item's key/id
+  - Any additional props from `itemProps`
+  
+  If omitted, must provide `children` function instead.
+</ParamField>
+
+<ParamField path="itemProps" type="TProps" optional>
+  Additional props to pass to each `item` component.
+</ParamField>
+
+<ParamField path="sortValues" type="(A: T, B: T, AKey: string, BKey: string) => number" optional>
+  A comparator function for sorting items. Only used for object and Map collections.
+  
+  Receives:
+  - `A`, `B`: The values to compare
+  - `AKey`, `BKey`: The keys of the values
+  
+  Return negative if A < B, positive if A > B, or 0 if equal.
+</ParamField>
+
+<ParamField path="children" type="(value: Observable<T>, id: string | undefined) => ReactElement" optional>
+  A render function for each item. Receives:
+  - `value`: Observable for the item
+  - `id`: The item's key/id
+  
+  If omitted, must provide `item` component instead.
+</ParamField>
+
+## Returns
+
+<ResponseField name="ReactElement | null" type="ReactElement | null">
+  An array of rendered React elements, or `null` if the collection is empty or undefined.
+</ResponseField>
+
+## Examples
+
+### Basic array iteration
+
+```tsx
+<For each={state$.todos}>
+  {(todo$) => (
+    <div>{todo$.text.get()}</div>
+  )}
+</For>
+```
+
+### With item component
+
+```tsx
+const TodoItem = observer(({ item$ }: { item$: Observable<Todo> }) => {
+  return (
+    <div>
+      <input
+        type="checkbox"
+        checked={item$.completed.get()}
+        onChange={(e) => item$.completed.set(e.target.checked)}
+      />
+      <span>{item$.text.get()}</span>
+    </div>
+  )
+})
+
+function TodoList() {
+  return <For each={state$.todos} item={TodoItem} />
+}
+```
+
+### With item props
+
+```tsx
+interface ItemProps {
+  onDelete: (id: string) => void
+}
+
+const TodoItem = observer(({ 
+  item$, 
+  id, 
+  onDelete 
+}: ForItemProps<Todo, ItemProps>) => {
+  return (
+    <div>
+      <span>{item$.text.get()}</span>
+      <button onClick={() => onDelete(id)}>Delete</button>
+    </div>
+  )
+})
+
+function TodoList() {
+  const handleDelete = (id: string) => {
+    state$.todos[id].delete()
+  }
+  
+  return (
+    <For 
+      each={state$.todos} 
+      item={TodoItem}
+      itemProps={{ onDelete: handleDelete }}
+    />
+  )
+}
+```
+
+### Optimized rendering
+
+```tsx
+// Only re-renders when items are added/removed/reordered
+<For each={state$.todos} optimized>
+  {(todo$, id) => (
+    <TodoItem key={id} todo$={todo$} />
+  )}
+</For>
+```
+
+### Object iteration
+
+```tsx
+const users$ = observable({
+  'user1': { name: 'Alice', age: 30 },
+  'user2': { name: 'Bob', age: 25 }
+})
+
+<For each={users$}>
+  {(user$, id) => (
+    <div key={id}>
+      {id}: {user$.name.get()}
+    </div>
+  )}
+</For>
+```
+
+### Map iteration
+
+```tsx
+const items$ = observable(new Map([
+  ['item1', { name: 'Apple', price: 1.99 }],
+  ['item2', { name: 'Banana', price: 0.99 }]
+]))
+
+<For each={items$}>
+  {(item$, id) => (
+    <div>
+      {item$.name.get()}: ${item$.price.get()}
+    </div>
+  )}
+</For>
+```
+
+### With sorting
+
+```tsx
+<For
+  each={state$.users}
+  sortValues={(a, b) => a.name.localeCompare(b.name)}
+>
+  {(user$) => <div>{user$.name.get()}</div>}
+</For>
+```
+
+### Complex sorting
+
+```tsx
+<For
+  each={state$.products}
+  sortValues={(a, b, aKey, bKey) => {
+    // Sort by price, then by name
+    if (a.price !== b.price) {
+      return a.price - b.price
+    }
+    return a.name.localeCompare(b.name)
+  }}
+>
+  {(product$) => (
+    <div>
+      {product$.name.get()}: ${product$.price.get()}
+    </div>
+  )}
+</For>
+```
+
+### Nested For components
+
+```tsx
+<For each={state$.categories}>
+  {(category$, categoryId) => (
+    <div>
+      <h2>{category$.name.get()}</h2>
+      <For each={category$.items}>
+        {(item$) => <div>{item$.name.get()}</div>}
+      </For>
+    </div>
+  )}
+</For>
+```
+
+### With conditional rendering
+
+```tsx
+<For each={state$.todos}>
+  {(todo$) => (
+    <Show if={todo$.completed.not()}>
+      <TodoItem todo$={todo$} />
+    </Show>
+  )}
+</For>
+```
+
+## Behavior
+
+### Key extraction
+
+For arrays, `For` automatically determines keys:
+1. Checks for an ID field configured on the observable node
+2. Falls back to `item.id` if it exists
+3. Falls back to `item.key` if it exists
+4. Uses array index as last resort
+
+```tsx
+const items$ = observable([
+  { id: 'a', name: 'Item A' },  // Uses 'a' as key
+  { key: 'b', name: 'Item B' },  // Uses 'b' as key
+  { name: 'Item C' }              // Uses index as key
+])
+```
+
+For objects and Maps, the object key or Map key is used.
+
+### Shallow tracking
+
+`For` uses shallow observable access by default:
+- Re-renders when the array/object/Map reference changes
+- Re-renders when items are added, removed, or reordered
+- Does NOT re-render when individual item properties change
+
+This is efficient because individual item components handle their own re-renders.
+
+### Optimized mode
+
+When `optimized={true}`:
+- Uses `optimized` getter internally
+- Only tracks the array structure, not item values
+- Maximum performance for large lists where items change frequently
+- Requires items to be objects (not primitives)
+
+```tsx
+// Without optimized: re-renders when any todo.completed changes
+<For each={state$.todos}>
+  {(todo$) => <div>{todo$.completed.get()}</div>}
+</For>
+
+// With optimized: only re-renders on add/remove/reorder
+<For each={state$.todos} optimized>
+  {(todo$) => <div>{todo$.completed.get()}</div>}
+</For>
+```
+
+### Item component memoization
+
+Item components are automatically memoized:
+- If you provide a component via `item` prop, `For` wraps it with `React.memo`
+- If you provide a `children` function, `For` wraps it with `observer` and `memo`
+
+This prevents unnecessary re-renders of list items.
+
+### Empty collections
+
+Returns `null` when:
+- `each` prop is omitted
+- `each` observable is `undefined`
+- Collection is empty
+
+```tsx
+// Render nothing if no todos
+<For each={state$.todos}>
+  {(todo$) => <TodoItem todo$={todo$} />}
+</For>
+
+// Show empty state
+<Show if={() => state$.todos.length === 0} else={
+  <For each={state$.todos}>
+    {(todo$) => <TodoItem todo$={todo$} />}
+  </For>
+}>
+  <EmptyState />
+</Show>
+```
+
+## Performance optimization
+
+### Use observer for item components
+
+```tsx
+// ✅ Each item only re-renders when its own data changes
+const TodoItem = observer(({ item$ }) => {
+  return <div>{item$.text.get()}</div>
+})
+
+<For each={state$.todos} item={TodoItem} />
+```
+
+### Avoid inline object creation
+
+```tsx
+// ❌ Creates new object on every render
+<For each={state$.todos}>
+  {(todo$) => (
+    <TodoItem data={{ todo: todo$.get() }} />
+  )}
+</For>
+
+// ✅ Pass observable directly
+<For each={state$.todos}>
+  {(todo$) => <TodoItem todo$={todo$} />}
+</For>
+```
+
+### Use optimized for large lists
+
+```tsx
+// For lists with 100+ items that change frequently
+<For each={state$.largeList} optimized>
+  {(item$) => <ItemComponent item$={item$} />}
+</For>
+```
+
+## Type definitions
+
+```typescript
+type ForItemProps<T, TProps = {}> = {
+  item$: Observable<T>
+  id?: string
+} & TProps
+
+interface ForProps<T, TProps> {
+  each?: ObservableParam<T[] | Record<any, T> | Map<any, T>>
+  optimized?: boolean
+  item?: FC<ForItemProps<T, TProps>>
+  itemProps?: TProps
+  sortValues?: (A: T, B: T, AKey: string, BKey: string) => number
+  children?: (value: Observable<T>, id: string | undefined) => ReactElement
+}
+```
+
+## Notes
+
+- Must provide either `item` or `children`, not both
+- Item components receive the deprecated `item` prop in addition to `item$` (will be removed in v3)
+- Keys are required for React reconciliation - `For` handles this automatically
+- For arrays, ensure items have stable IDs for optimal performance
+- `sortValues` is only applied to objects and Maps, not arrays
+- Children functions are automatically wrapped with `observer`
+
+## Related
+
+- [Show](/api/react/show) - Conditional rendering
+- [Switch](/api/react/switch) - Multi-case rendering
+- [observer](/api/react/observer) - Automatic observable tracking
+- [Memo](/api/react/memo) - Memoize computed sections

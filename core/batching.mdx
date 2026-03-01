@@ -1,0 +1,497 @@
+---
+title: Batching Updates
+description: Optimize performance by batching multiple observable updates
+---
+
+## Overview
+
+Batching allows you to group multiple observable updates together so that listeners and observers only run once after all changes complete. This is essential for performance when making multiple related updates.
+
+## The batch() Function
+
+Wrap multiple updates in a `batch()` call:
+
+```typescript
+import { observable, batch } from '@legendapp/state'
+
+const state$ = observable({
+  firstName: 'Alice',
+  lastName: 'Smith',
+  age: 30
+})
+
+state$.onChange(() => {
+  console.log('State changed!')
+})
+
+// Without batching - logs 3 times
+state$.firstName.set('Bob')
+state$.lastName.set('Jones')
+state$.age.set(31)
+// Logs:
+// "State changed!"
+// "State changed!"
+// "State changed!"
+
+// With batching - logs once
+batch(() => {
+  state$.firstName.set('Charlie')
+  state$.lastName.set('Brown')
+  state$.age.set(32)
+})
+// Logs: "State changed!" (only once)
+```
+
+## Type Signature
+
+```typescript
+function batch(fn: () => void): void
+function beginBatch(): void
+function endBatch(): void
+```
+
+## Manual Batching
+
+For more control, use `beginBatch()` and `endBatch()`:
+
+```typescript
+import { beginBatch, endBatch } from '@legendapp/state'
+
+const state$ = observable({
+  items: [],
+  total: 0,
+  average: 0
+})
+
+beginBatch()
+
+try {
+  state$.items.set([1, 2, 3, 4, 5])
+  state$.total.set(15)
+  state$.average.set(3)
+} finally {
+  endBatch()
+}
+// All listeners notified together
+```
+
+<Warning>
+Always call `endBatch()` in a `finally` block to ensure batching completes even if an error occurs.
+</Warning>
+
+## How Batching Works
+
+When you batch updates:
+
+1. **Changes are collected**: All `set()` calls within the batch are recorded
+2. **Listeners are deferred**: Listeners don't run until the batch completes
+3. **Notifications are consolidated**: Each listener receives all changes at once
+4. **Previous values are preserved**: The `getPrevious()` function returns the value from before the entire batch
+
+```typescript
+const count$ = observable(0)
+
+count$.onChange((params) => {
+  console.log('Current:', params.value)
+  console.log('Previous:', params.getPrevious())
+  console.log('Number of changes:', params.changes.length)
+})
+
+batch(() => {
+  count$.set(1)
+  count$.set(2)
+  count$.set(3)
+})
+// Logs:
+// "Current: 3"
+// "Previous: 0" (from before the batch)
+// "Number of changes: 1"
+```
+
+## Nested Batching
+
+Batches can be nested - notifications only fire when the outermost batch completes:
+
+```typescript
+const state$ = observable({ a: 0, b: 0, c: 0 })
+
+state$.onChange(() => {
+  console.log('Changed!')
+})
+
+batch(() => {
+  state$.a.set(1)
+  
+  batch(() => {
+    state$.b.set(2)
+    state$.c.set(3)
+  })
+  // Inner batch ends, but no notification yet
+  
+  state$.a.set(4)
+})
+// Outer batch ends - logs "Changed!" once
+```
+
+## Automatic Batching
+
+Some operations automatically batch updates:
+
+### Array Methods
+
+Array modification methods are automatically batched:
+
+```typescript
+const items$ = observable([1, 2, 3])
+
+items$.onChange(() => {
+  console.log('Items changed!')
+})
+
+// Automatically batched - logs once
+items$.push(4, 5, 6)
+// Logs: "Items changed!" (once)
+
+// splice is also batched
+items$.splice(0, 2, 10, 20)
+// Logs: "Items changed!" (once)
+```
+
+### assign() Method
+
+The `assign()` method automatically batches property updates:
+
+```typescript
+const user$ = observable({
+  name: 'Alice',
+  age: 30,
+  email: 'alice@example.com'
+})
+
+user$.onChange(() => {
+  console.log('User changed!')
+})
+
+// Automatically batched
+user$.assign({
+  age: 31,
+  email: 'alice@newdomain.com'
+})
+// Logs: "User changed!" (once)
+```
+
+## Batching with Observers
+
+Observers created with `observe()` also benefit from batching:
+
+```typescript
+const firstName$ = observable('Alice')
+const lastName$ = observable('Smith')
+
+let runCount = 0
+observe(() => {
+  runCount++
+  console.log(`${firstName$.get()} ${lastName$.get()}`)
+})
+// Logs: "Alice Smith"
+// runCount: 1
+
+// Without batching - runs twice
+firstName$.set('Bob')
+lastName$.set('Jones')
+// Logs: "Bob Smith"
+// Logs: "Bob Jones" 
+// runCount: 3
+
+// With batching - runs once
+batch(() => {
+  firstName$.set('Charlie')
+  lastName$.set('Brown')
+})
+// Logs: "Charlie Brown" (once)
+// runCount: 4
+```
+
+## Performance Benefits
+
+### React Rendering
+
+In React, batching prevents unnecessary re-renders:
+
+```typescript
+const Component = () => {
+  const state$ = useObservable({
+    count: 0,
+    total: 0
+  })
+  
+  const increment = () => {
+    // ❌ Without batching - component renders twice
+    state$.count.set(c => c + 1)
+    state$.total.set(t => t + 1)
+  }
+  
+  const incrementBatched = () => {
+    // ✅ With batching - component renders once
+    batch(() => {
+      state$.count.set(c => c + 1)
+      state$.total.set(t => t + 1)
+    })
+  }
+  
+  return (
+    <div>
+      <div>Count: {state$.count.get()}</div>
+      <div>Total: {state$.total.get()}</div>
+      <button onClick={incrementBatched}>Increment</button>
+    </div>
+  )
+}
+```
+
+### Computed Updates
+
+Batching prevents computed observables from recalculating multiple times:
+
+```typescript
+const width$ = observable(100)
+const height$ = observable(50)
+
+let computeCount = 0
+const area$ = computed(() => {
+  computeCount++
+  return width$.get() * height$.get()
+})
+
+area$.onChange(() => {
+  console.log('Area:', area$.get())
+})
+
+// Without batching - computes twice
+width$.set(200)
+height$.set(100)
+// computeCount: 2
+
+// With batching - computes once
+batch(() => {
+  width$.set(300)
+  height$.set(150)
+})
+// computeCount: 3 (only one more)
+```
+
+## When to Use Batching
+
+<CardGroup cols={2}>
+  <Card title="Multiple Related Updates" icon="arrows-rotate">
+    Always batch when updating multiple observables that should be treated as one logical change.
+  </Card>
+  <Card title="Form Submissions" icon="square-check">
+    Batch all field updates when submitting or resetting a form.
+  </Card>
+  <Card title="Bulk Operations" icon="list">
+    Batch when processing arrays or performing bulk updates to collections.
+  </Card>
+  <Card title="Initialization" icon="rocket">
+    Batch when setting up initial state with multiple properties.
+  </Card>
+</CardGroup>
+
+## Common Patterns
+
+### Form Updates
+
+```typescript
+const form$ = observable({
+  name: '',
+  email: '',
+  phone: '',
+  address: ''
+})
+
+function updateForm(data: Partial<typeof form$>) {
+  batch(() => {
+    if (data.name !== undefined) form$.name.set(data.name)
+    if (data.email !== undefined) form$.email.set(data.email)
+    if (data.phone !== undefined) form$.phone.set(data.phone)
+    if (data.address !== undefined) form$.address.set(data.address)
+  })
+}
+
+// Or use assign which batches automatically
+form$.assign(data)
+```
+
+### Bulk Array Updates
+
+```typescript
+const todos$ = observable([
+  { id: 1, done: false },
+  { id: 2, done: false },
+  { id: 3, done: false }
+])
+
+function markAllDone() {
+  batch(() => {
+    todos$.forEach(todo => {
+      todo.done.set(true)
+    })
+  })
+}
+```
+
+### State Synchronization
+
+```typescript
+const localState$ = observable({
+  items: [],
+  lastSync: 0,
+  isSyncing: false
+})
+
+async function syncFromServer() {
+  const data = await fetchFromServer()
+  
+  batch(() => {
+    localState$.items.set(data.items)
+    localState$.lastSync.set(Date.now())
+    localState$.isSyncing.set(false)
+  })
+}
+```
+
+### Transaction-like Updates
+
+```typescript
+const account$ = observable({
+  balance: 1000,
+  transactions: []
+})
+
+function transfer(amount: number, to: string) {
+  batch(() => {
+    account$.balance.set(b => b - amount)
+    account$.transactions.push({
+      amount,
+      to,
+      date: new Date(),
+      type: 'transfer'
+    })
+  })
+}
+```
+
+## Batching with Promises
+
+Batching works with async operations:
+
+```typescript
+const state$ = observable({
+  data: null,
+  loading: false,
+  error: null
+})
+
+async function fetchData() {
+  // Set loading state
+  batch(() => {
+    state$.loading.set(true)
+    state$.error.set(null)
+  })
+  
+  try {
+    const data = await fetch('/api/data').then(r => r.json())
+    
+    // Update with results
+    batch(() => {
+      state$.data.set(data)
+      state$.loading.set(false)
+    })
+  } catch (error) {
+    // Update with error
+    batch(() => {
+      state$.error.set(error)
+      state$.loading.set(false)
+    })
+  }
+}
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Batch Related Changes" icon="layer-group">
+    Group updates that represent a single logical operation.
+  </Card>
+  <Card title="Keep Batches Short" icon="clock">
+    Don't perform long-running operations inside batches - batch only the updates.
+  </Card>
+  <Card title="Use assign() When Possible" icon="code-merge">
+    `assign()` automatically batches and is often clearer than manual batching.
+  </Card>
+  <Card title="Always Complete Batches" icon="check">
+    Use try/finally with manual batching to ensure `endBatch()` is called.
+  </Card>
+</CardGroup>
+
+## Common Mistakes
+
+### Long-Running Operations
+
+```typescript
+// ❌ Bad - blocks notification
+batch(() => {
+  state$.data.set(newData)
+  processData(newData) // Expensive operation
+  state$.processed.set(true)
+})
+
+// ✅ Good - only batch the updates
+const processed = processData(newData)
+batch(() => {
+  state$.data.set(newData)
+  state$.processed.set(true)
+})
+```
+
+### Forgetting endBatch()
+
+```typescript
+// ❌ Bad - endBatch might not be called
+beginBatch()
+state$.a.set(1)
+if (condition) {
+  return // endBatch never called!
+}
+endBatch()
+
+// ✅ Good - always use try/finally
+beginBatch()
+try {
+  state$.a.set(1)
+  if (condition) {
+    return
+  }
+} finally {
+  endBatch()
+}
+
+// ✅ Even better - use batch()
+batch(() => {
+  state$.a.set(1)
+  if (condition) {
+    return
+  }
+})
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="React Integration" href="/react/overview" icon="react">
+    Learn how batching works with React components
+  </Card>
+  <Card title="Performance Tips" href="/guides/performance" icon="gauge-high">
+    Discover more performance optimization techniques
+  </Card>
+</CardGroup>

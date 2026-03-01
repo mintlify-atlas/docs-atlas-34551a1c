@@ -1,0 +1,576 @@
+---
+title: "synced() Function"
+description: "Create synced observables with automatic persistence and remote synchronization"
+---
+
+The `synced()` function creates an observable that automatically persists to local storage and/or syncs with a remote backend. It's the foundation of Legend-State's local-first architecture.
+
+## Basic Usage
+
+```ts
+import { observable } from '@legendapp/state'
+import { synced } from '@legendapp/state/sync'
+
+const data$ = observable(synced({
+  initial: { count: 0 },
+  persist: { name: 'myData' }
+}))
+
+// Changes are automatically saved
+data$.count.set(42)
+```
+
+## Import
+
+```ts
+import { synced } from '@legendapp/state/sync'
+```
+
+## Signature
+
+```ts
+function synced<TRemote, TLocal = TRemote>(
+  options: SyncedOptions<TRemote, TLocal>
+): Synced<TLocal>
+
+function synced<TRemote>(
+  get: () => TRemote
+): Synced<TRemote>
+```
+
+## Configuration Options
+
+### Core Options
+
+#### `initial`
+
+Initial value to use before data loads:
+
+```ts
+const data$ = observable(synced({
+  initial: { users: [], loading: true },
+  get: async () => fetchUsers()
+}))
+```
+
+#### `persist`
+
+Local persistence configuration:
+
+```ts
+import { ObservablePersistLocalStorage } from '@legendapp/state/persist-plugins/local-storage'
+
+const data$ = observable(synced({
+  persist: {
+    name: 'userData', // Required: unique storage key
+    plugin: ObservablePersistLocalStorage, // Storage plugin
+    retrySync: true, // Persist pending changes across restarts
+    readonly: false, // Make cache read-only
+    transform: { // Transform cached data
+      load: (value) => ({ ...value, cachedAt: Date.now() }),
+      save: (value) => value
+    }
+  }
+}))
+```
+
+<Warning>
+**retrySync is critical**: Enable `retrySync: true` to ensure pending changes survive app restarts. Without it, unsaved changes are lost on reload.
+</Warning>
+
+### Remote Sync Options
+
+#### `get`
+
+Fetch data from remote source:
+
+```ts
+const data$ = observable(synced({
+  async get({ value, lastSync, mode }) {
+    // value: current local value
+    // lastSync: timestamp of last successful sync
+    // mode: 'set' | 'assign' | 'merge' | 'append'
+    
+    const response = await fetch('/api/data')
+    return response.json()
+  }
+}))
+```
+
+**Shorthand**: Pass a function directly:
+
+```ts
+const data$ = observable(synced(() => fetchData()))
+```
+
+#### `set`
+
+Save changes to remote source:
+
+```ts
+const data$ = observable(synced({
+  get: () => fetchData(),
+  async set({ value, changes, update }) {
+    // value: full current value
+    // changes: array of specific changes
+    // update: function to merge remote response
+    
+    const response = await fetch('/api/data', {
+      method: 'PUT',
+      body: JSON.stringify(value)
+    })
+    
+    // Merge server response back
+    const saved = await response.json()
+    update({ value: saved })
+  }
+}))
+```
+
+#### `subscribe`
+
+Listen for real-time updates:
+
+```ts
+const data$ = observable(synced({
+  subscribe({ value$, lastSync, update }) {
+    // Set up real-time subscription
+    const unsubscribe = realtime.subscribe((data) => {
+      update({ value: data })
+    })
+    
+    // Return cleanup function
+    return unsubscribe
+  }
+}))
+```
+
+### Sync Behavior Options
+
+#### `syncMode`
+
+Control when sync happens:
+
+```ts
+const data$ = observable(synced({
+  syncMode: 'auto', // 'auto' | 'manual'
+  get: () => fetchData()
+}))
+
+// Manual mode: trigger sync explicitly
+if (syncMode === 'manual') {
+  syncState(data$).sync()
+}
+```
+
+#### `mode`
+
+How to merge remote data with local state:
+
+```ts
+const data$ = observable(synced({
+  mode: 'merge', // 'set' | 'assign' | 'merge' | 'append'
+  get: () => fetchData()
+}))
+```
+
+| Mode | Behavior |
+|------|----------|
+| `set` | Replace entire value |
+| `assign` | Shallow merge (Object.assign) |
+| `merge` | Deep merge, preserves nested objects |
+| `append` | Add to array |
+
+#### `debounceSet`
+
+Delay sync after changes to batch updates:
+
+```ts
+const data$ = observable(synced({
+  debounceSet: 500, // Wait 500ms after last change
+  set: async ({ value }) => saveData(value)
+}))
+
+// These rapid changes result in one sync call
+data$.name.set('Alice')
+data$.age.set(30)
+data$.email.set('alice@example.com')
+// -> One save after 500ms
+```
+
+#### `retry`
+
+Configure retry behavior for failed syncs:
+
+```ts
+const data$ = observable(synced({
+  retry: {
+    infinite: false, // Keep retrying forever?
+    times: 3, // Max retry attempts (if not infinite)
+    delay: 1000, // Initial delay in ms
+    backoff: 'exponential', // 'constant' | 'exponential'
+    maxDelay: 30000 // Maximum delay between retries
+  },
+  set: async ({ value }) => saveData(value)
+}))
+```
+
+<Info>
+With exponential backoff, delays double each retry: 1s, 2s, 4s, 8s, etc., capped at `maxDelay`.
+</Info>
+
+#### `changesSince`
+
+Optimize sync by only fetching changed data:
+
+```ts
+const data$ = observable(synced({
+  changesSince: 'last-sync', // 'all' | 'last-sync'
+  fieldUpdatedAt: 'updatedAt',
+  get: async ({ lastSync }) => {
+    // Only fetch items updated after lastSync
+    return fetchChangedItems(lastSync)
+  }
+}))
+```
+
+### Transform Options
+
+#### `transform`
+
+Transform data between local and remote formats:
+
+```ts
+const data$ = observable(synced({
+  transform: {
+    // Transform when loading from remote/cache
+    load: (value, method) => {
+      // method: 'get' | 'set'
+      return {
+        ...value,
+        createdAt: new Date(value.createdAt)
+      }
+    },
+    // Transform when saving to remote/cache
+    save: (value) => {
+      return {
+        ...value,
+        createdAt: value.createdAt.toISOString()
+      }
+    }
+  }
+}))
+```
+
+**Built-in transforms**:
+
+```ts
+import { transformStringifyDates } from '@legendapp/state/sync'
+
+const data$ = observable(synced({
+  transform: transformStringifyDates('createdAt', 'updatedAt')
+}))
+```
+
+### Lifecycle Hooks
+
+#### `onBeforeGet`
+
+Called before fetching from remote:
+
+```ts
+const data$ = observable(synced({
+  onBeforeGet({ value, lastSync, pendingChanges, cancel, clearPendingChanges }) {
+    // value: current local value
+    // pendingChanges: unsaved changes
+    // cancel: set to true to cancel the get
+    
+    if (pendingChanges) {
+      console.log('Has pending changes:', pendingChanges)
+    }
+  }
+}))
+```
+
+#### `onBeforeSet`
+
+Called before saving to remote:
+
+```ts
+const data$ = observable(synced({
+  onBeforeSet({ cancel }) {
+    // Validate before saving
+    if (!isValid()) {
+      cancel = true
+    }
+  }
+}))
+```
+
+#### `onAfterSet`
+
+Called after successful save:
+
+```ts
+const data$ = observable(synced({
+  onAfterSet() {
+    console.log('Successfully saved!')
+  }
+}))
+```
+
+#### `onError`
+
+Handle sync errors:
+
+```ts
+const data$ = observable(synced({
+  onError(error, params) {
+    console.error('Sync error:', error.message)
+    console.log('Source:', params.source) // 'get' | 'set' | 'subscribe'
+    console.log('Retry attempt:', params.retry.retryNum)
+    
+    // Revert changes on error
+    if (params.revert) {
+      params.revert()
+    }
+  }
+}))
+```
+
+### Conditional Sync
+
+#### `waitFor`
+
+Wait for conditions before syncing:
+
+```ts
+import { observable, when } from '@legendapp/state'
+
+const isOnline$ = observable(navigator.onLine)
+const isAuthed$ = observable(false)
+
+const data$ = observable(synced({
+  // Wait for multiple conditions
+  waitFor: [isOnline$, isAuthed$],
+  get: () => fetchData()
+}))
+
+// Or wait for a promise
+const data2$ = observable(synced({
+  waitFor: initializeAuth(),
+  get: () => fetchData()
+}))
+```
+
+#### `waitForSet`
+
+Wait before saving changes:
+
+```ts
+const data$ = observable(synced({
+  // Wait until a specific field is set
+  waitForSet: (changes) => changes.some(c => c.path.includes('id')),
+  
+  set: async ({ value }) => saveData(value)
+}))
+```
+
+## Working with synced() Observables
+
+### Check Sync State
+
+```ts
+import { syncState } from '@legendapp/state'
+
+const data$ = observable(synced({ /* ... */ }))
+const state$ = syncState(data$)
+
+// Check loading state
+if (state$.isLoaded.get()) {
+  console.log('Data loaded!')
+}
+
+// Check for pending changes
+if (state$.numPendingSets.get() > 0) {
+  console.log('Changes pending...')
+}
+```
+
+### Manual Sync
+
+```ts
+// Trigger a manual sync
+await state$.sync()
+
+// Force refetch with resetLastSync
+await state$.sync({ resetLastSync: true })
+```
+
+### Access Pending Changes
+
+```ts
+const pending = state$.getPendingChanges()
+console.log('Pending:', pending)
+// { "path/to/field": { p: previousValue, v: newValue, t: pathTypes } }
+```
+
+### Reset Cache
+
+```ts
+// Clear local cache and metadata
+await state$.resetPersistence()
+
+// Reload from remote
+await state$.sync()
+```
+
+## Common Patterns
+
+### Simple GET Sync
+
+Read-only data from an API:
+
+```ts
+const products$ = observable(synced({
+  initial: [],
+  persist: { name: 'products' },
+  get: async () => {
+    const res = await fetch('/api/products')
+    return res.json()
+  }
+}))
+```
+
+### GET and SET Sync
+
+Bidirectional sync with API:
+
+```ts
+const settings$ = observable(synced({
+  initial: { theme: 'dark' },
+  persist: { name: 'settings', retrySync: true },
+  
+  get: async () => {
+    const res = await fetch('/api/settings')
+    return res.json()
+  },
+  
+  set: async ({ value }) => {
+    await fetch('/api/settings', {
+      method: 'PUT',
+      body: JSON.stringify(value)
+    })
+  },
+  
+  debounceSet: 500,
+  retry: { infinite: true }
+}))
+```
+
+### Incremental Sync
+
+Only sync changes since last sync:
+
+```ts
+const messages$ = observable(synced({
+  initial: [],
+  persist: { name: 'messages', retrySync: true },
+  changesSince: 'last-sync',
+  fieldUpdatedAt: 'updatedAt',
+  mode: 'merge',
+  
+  get: async ({ lastSync }) => {
+    const url = lastSync 
+      ? `/api/messages?since=${lastSync}`
+      : '/api/messages'
+    const res = await fetch(url)
+    return res.json()
+  }
+}))
+```
+
+### Real-time Subscription
+
+Listen for live updates:
+
+```ts
+const liveData$ = observable(synced({
+  initial: {},
+  
+  get: async () => {
+    const res = await fetch('/api/data')
+    return res.json()
+  },
+  
+  subscribe({ update }) {
+    const ws = new WebSocket('wss://api.example.com')
+    
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data)
+      update({ value: data })
+    }
+    
+    return () => ws.close()
+  }
+}))
+```
+
+### Authenticated Sync
+
+Wait for authentication before syncing:
+
+```ts
+const authToken$ = observable('')
+
+const userData$ = observable(synced({
+  waitFor: () => authToken$.get(), // Wait for token
+  
+  get: async () => {
+    const res = await fetch('/api/user', {
+      headers: { Authorization: `Bearer ${authToken$.get()}` }
+    })
+    return res.json()
+  }
+}))
+```
+
+## Type Safety
+
+synced() supports different local and remote types:
+
+```ts
+interface RemoteUser {
+  id: string
+  name: string
+  created_at: string // ISO string from API
+}
+
+interface LocalUser {
+  id: string
+  name: string
+  createdAt: Date // Date object locally
+}
+
+const user$ = observable(synced<RemoteUser, LocalUser>({
+  transform: {
+    load: (remote) => ({
+      id: remote.id,
+      name: remote.name,
+      createdAt: new Date(remote.created_at)
+    }),
+    save: (local) => ({
+      id: local.id,
+      name: local.name,
+      created_at: local.createdAt.toISOString()
+    })
+  }
+}))
+```
+
+## See Also
+
+- [Local Persistence](/sync/local-persistence) - Configure storage plugins
+- [Remote Sync](/sync/remote-sync) - Use sync plugins for backends
+- [Conflict Resolution](/sync/conflict-resolution) - Handle conflicts
+- [syncState](/api/sync-state) - Monitor sync status

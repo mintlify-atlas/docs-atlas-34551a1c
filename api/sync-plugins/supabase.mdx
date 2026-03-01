@@ -1,0 +1,524 @@
+---
+title: Supabase Plugin
+description: Sync observables with Supabase database with real-time subscriptions
+---
+
+The Supabase plugin provides seamless integration with Supabase, including CRUD operations, real-time subscriptions, and automatic type safety from your database schema.
+
+## Installation
+
+```bash
+npm install @legendapp/state @supabase/supabase-js
+```
+
+## Setup
+
+```ts
+import { createClient } from '@supabase/supabase-js'
+import { configureSyncedSupabase } from '@legendapp/state/sync-plugins/supabase'
+
+const supabase = createClient(
+  'https://your-project.supabase.co',
+  'your-anon-key'
+)
+
+configureSyncedSupabase({
+  supabase,
+  // Optional global config
+  changesSince: 'last-sync',
+  persist: {
+    plugin: ObservablePersistIndexedDB
+  }
+})
+```
+
+## Usage
+
+```ts
+import { syncedSupabase } from '@legendapp/state/sync-plugins/supabase'
+
+const posts$ = syncedSupabase({
+  supabase,
+  collection: 'posts',
+  realtime: true,
+  as: 'object'
+})
+```
+
+## Configuration
+
+<ParamField path="supabase" type="SupabaseClient" required>
+  Supabase client instance
+</ParamField>
+
+<ParamField path="collection" type="string" required>
+  Table or view name in your database
+  
+  ```ts
+  collection: 'posts'
+  collection: 'public.posts'
+  ```
+</ParamField>
+
+<ParamField path="schema" type="string" default="public">
+  Database schema name
+  
+  ```ts
+  schema: 'public'
+  schema: 'custom_schema'
+  ```
+</ParamField>
+
+<ParamField path="select" type="(query) => PostgrestFilterBuilder">
+  Custom select query with joins and filters
+  
+  ```ts
+  select: (query) => query
+    .select('*, author:users(name, avatar)')
+  ```
+</ParamField>
+
+<ParamField path="filter" type="(select, params) => PostgrestFilterBuilder">
+  Additional filters applied to queries
+  
+  ```ts
+  filter: (select) => select
+    .eq('status', 'published')
+    .order('created_at', { ascending: false })
+  ```
+</ParamField>
+
+<ParamField path="actions" type="('create' | 'read' | 'update' | 'delete')[]">
+  Allowed CRUD operations
+  
+  ```ts
+  actions: ['read']  // Read-only
+  actions: ['create', 'read', 'update']  // No delete
+  ```
+</ParamField>
+
+<ParamField path="realtime" type="boolean | { schema?: string, filter?: string }" default="false">
+  Enable real-time subscriptions
+  
+  ```ts
+  // Enable basic realtime
+  realtime: true
+  
+  // With custom filter
+  realtime: {
+    schema: 'public',
+    filter: 'author_id=eq.123'
+  }
+  ```
+</ParamField>
+
+<ParamField path="stringifyDates" type="boolean">
+  Automatically convert dates to/from ISO strings
+</ParamField>
+
+<ParamField path="as" type="'object' | 'array' | 'Map'" default="object">
+  How to structure the data
+</ParamField>
+
+<ParamField path="fieldId" type="string" default="id">
+  Name of the ID field
+</ParamField>
+
+<ParamField path="fieldCreatedAt" type="string">
+  Field tracking creation time (for incremental sync)
+</ParamField>
+
+<ParamField path="fieldUpdatedAt" type="string">
+  Field tracking update time (for incremental sync)
+</ParamField>
+
+<ParamField path="fieldDeleted" type="string">
+  Field for soft deletes
+</ParamField>
+
+<ParamField path="changesSince" type="'all' | 'last-sync'" default="all">
+  Query strategy
+  - `all`: Fetch all data
+  - `last-sync`: Only fetch items updated since last sync
+</ParamField>
+
+<ParamField path="transform" type="SyncTransform">
+  Transform data between local and remote formats
+</ParamField>
+
+<ParamField path="persist" type="PersistOptions">
+  Local persistence configuration
+</ParamField>
+
+## Examples
+
+### Basic Usage
+
+```ts
+import { syncedSupabase } from '@legendapp/state/sync-plugins/supabase'
+
+const posts$ = syncedSupabase({
+  supabase,
+  collection: 'posts',
+  as: 'object'
+})
+
+// Access data
+const posts = posts$.get()
+Object.values(posts).forEach(post => {
+  console.log(post.title)
+})
+```
+
+### With Type Safety
+
+```ts
+import { Database } from './database.types'  // Generated from Supabase
+
+type Post = Database['public']['Tables']['posts']['Row']
+
+const posts$ = syncedSupabase<
+  typeof supabase,
+  'posts',
+  'public',
+  'object',
+  Post
+>({
+  supabase,
+  collection: 'posts',
+  as: 'object'
+})
+
+// Fully typed
+posts$['post-1'].title.set('New Title')  // ✓
+posts$['post-1'].invalid.set('value')    // ✗ TypeScript error
+```
+
+### Real-time Sync
+
+```tsx
+import { observer } from '@legendapp/state/react'
+
+const posts$ = syncedSupabase({
+  supabase,
+  collection: 'posts',
+  realtime: true,  // Enable real-time
+  as: 'array'
+})
+
+const PostList = observer(function PostList() {
+  const posts = posts$.get()
+  
+  return (
+    <div>
+      {posts.map(post => (
+        <div key={post.id}>{post.title}</div>
+      ))}
+    </div>
+  )
+})
+
+// Automatically updates when data changes in Supabase
+```
+
+### CRUD Operations
+
+```ts
+const posts$ = syncedSupabase({
+  supabase,
+  collection: 'posts',
+  as: 'object'
+})
+
+// Create
+posts$['new-id'].set({
+  id: 'new-id',
+  title: 'New Post',
+  content: 'Content here'
+})
+
+// Update
+posts$['post-1'].title.set('Updated Title')
+
+// Delete
+posts$['post-1'].delete()
+
+// Changes sync automatically with Supabase
+```
+
+### With Filtering
+
+```ts
+const publishedPosts$ = syncedSupabase({
+  supabase,
+  collection: 'posts',
+  filter: (select) => select
+    .eq('status', 'published')
+    .order('created_at', { ascending: false })
+    .limit(20),
+  as: 'array'
+})
+```
+
+### With Joins
+
+```ts
+const posts$ = syncedSupabase({
+  supabase,
+  collection: 'posts',
+  select: (query) => query
+    .select(`
+      *,
+      author:users!author_id(
+        id,
+        name,
+        avatar_url
+      ),
+      comments:comments(
+        id,
+        content,
+        user:users(name)
+      )
+    `),
+  as: 'object'
+})
+
+// Access joined data
+const post = posts$['post-1'].get()
+console.log(post.author.name)
+console.log(post.comments.length)
+```
+
+### Incremental Sync
+
+```ts
+const posts$ = syncedSupabase({
+  supabase,
+  collection: 'posts',
+  changesSince: 'last-sync',
+  fieldCreatedAt: 'created_at',
+  fieldUpdatedAt: 'updated_at',
+  fieldDeleted: 'deleted',
+  persist: {
+    name: 'posts',
+    plugin: ObservablePersistIndexedDB,
+    retrySync: true
+  }
+})
+
+// First load: Fetches all posts
+// Subsequent loads: Only fetches posts updated since last sync
+```
+
+### Read-Only View
+
+```ts
+const stats$ = syncedSupabase({
+  supabase,
+  collection: 'post_stats',  // Database view
+  actions: ['read'],  // Read-only
+  as: 'array'
+})
+
+// Can't modify (throws error)
+// stats$[0].views.set(100)  // Error
+```
+
+### Soft Deletes
+
+```ts
+const posts$ = syncedSupabase({
+  supabase,
+  collection: 'posts',
+  fieldDeleted: 'deleted_at',
+  filter: (select) => select.is('deleted_at', null)  // Only non-deleted
+})
+
+// Delete sets deleted_at timestamp
+posts$['post-1'].delete()
+// Updates: { id: 'post-1', deleted_at: '2024-03-01T10:00:00Z' }
+```
+
+### Date Handling
+
+```ts
+const posts$ = syncedSupabase({
+  supabase,
+  collection: 'posts',
+  stringifyDates: true,  // Auto-convert dates
+  as: 'object'
+})
+
+// Dates are automatically converted
+const post = posts$['post-1'].get()
+console.log(post.created_at.toISOString())  // Date object
+
+// When saving, automatically stringified
+posts$['post-1'].published_at.set(new Date())
+```
+
+### User-Specific Data
+
+```tsx
+import { observable } from '@legendapp/state'
+
+const userId$ = observable<string | null>(null)
+
+const myPosts$ = syncedSupabase({
+  supabase,
+  collection: 'posts',
+  filter: (select) => {
+    const userId = userId$.get()
+    return userId ? select.eq('author_id', userId) : select.eq('id', -1)
+  },
+  waitFor: () => !!userId$.get(),  // Wait for user ID
+  realtime: true
+})
+
+// Login
+const { data: { user } } = await supabase.auth.signInWithPassword({
+  email: 'user@example.com',
+  password: 'password'
+})
+userId$.set(user.id)
+
+// Automatically fetches user's posts
+```
+
+### With Persistence
+
+```ts
+import { ObservablePersistIndexedDB } from '@legendapp/state/persist-plugins/indexeddb'
+
+const posts$ = syncedSupabase({
+  supabase,
+  collection: 'posts',
+  realtime: true,
+  persist: {
+    name: 'posts',
+    plugin: ObservablePersistIndexedDB
+  }
+})
+
+// 1. Loads from IndexedDB (instant)
+// 2. Syncs with Supabase in background
+// 3. Subscribes to real-time updates
+// 4. Saves changes to both IndexedDB and Supabase
+```
+
+### Error Handling
+
+```ts
+const posts$ = syncedSupabase({
+  supabase,
+  collection: 'posts',
+  onError: (error, { source, type, retry, revert }) => {
+    console.error(`Supabase ${source} error:`, error)
+    
+    if (error.message.includes('Failed to fetch')) {
+      // Network error, will retry
+      return
+    }
+    
+    if (source === 'create' && error.message.includes('duplicate')) {
+      showNotification('Item already exists')
+      revert?.()  // Revert local changes
+    } else {
+      showNotification(`Failed to ${source}`)
+    }
+  }
+})
+```
+
+### Multi-Tenant
+
+```ts
+const tenantId$ = observable('tenant-123')
+
+const data$ = syncedSupabase({
+  supabase,
+  collection: 'data',
+  filter: (select) => select.eq('tenant_id', tenantId$.get()),
+  realtime: {
+    filter: computed(() => `tenant_id=eq.${tenantId$.get()}`)
+  },
+  persist: {
+    name: computed(() => `data-${tenantId$.get()}`)
+  }
+})
+
+// Switch tenant - automatically refetches with new filter
+tenantId$.set('tenant-456')
+```
+
+### Custom Functions
+
+```ts
+const posts$ = syncedSupabase({
+  supabase,
+  collection: 'posts',
+  list: async (params) => {
+    // Custom function instead of direct table access
+    const { data, error } = await supabase
+      .rpc('get_posts_with_stats', {
+        user_id: currentUser$.id.get()
+      })
+    
+    if (error) throw error
+    return { data, error: null }
+  },
+  as: 'array'
+})
+```
+
+## Real-time Subscriptions
+
+Supabase real-time automatically:
+- Subscribes on first access
+- Updates observable when data changes
+- Handles INSERT, UPDATE, DELETE events
+- Filters updates by `fieldUpdatedAt` to avoid duplicates
+- Unsubscribes when observable is no longer observed
+
+```ts
+const posts$ = syncedSupabase({
+  supabase,
+  collection: 'posts',
+  realtime: true,
+  fieldUpdatedAt: 'updated_at'
+})
+
+// Changes from other clients are automatically synced
+// No manual subscription management needed
+```
+
+## Row Level Security
+
+Supabase RLS is automatically respected:
+
+```ts
+// User can only see their own posts (enforced by RLS)
+const myPosts$ = syncedSupabase({
+  supabase,
+  collection: 'posts'
+  // No filter needed - RLS handles it
+})
+
+// Attempts to access other users' posts will be filtered by RLS
+```
+
+## Best Practices
+
+1. **Enable RLS**: Use Supabase Row Level Security for access control
+2. **Use incremental sync**: Enable `changesSince: 'last-sync'` for better performance
+3. **Add persistence**: Cache data locally for offline support
+4. **Enable real-time**: Use `realtime: true` for live updates
+5. **Handle errors**: Implement `onError` for production apps
+6. **Use filters**: Filter at database level for better performance
+
+## See Also
+
+- [Firebase Plugin](/api/sync-plugins/firebase) - Similar features for Firebase
+- [Keel Plugin](/api/sync-plugins/keel) - Keel backend integration
+- [synced()](/api/sync/synced) - Core sync functionality
+- [Supabase Documentation](https://supabase.com/docs) - Supabase docs

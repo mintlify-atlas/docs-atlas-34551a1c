@@ -1,0 +1,655 @@
+---
+title: Reactive Components
+description: Use Memo, Show, For, Switch, and Reactive for ultra-fine-grained rendering
+---
+
+Legend-State provides reactive components that enable ultra-fine-grained rendering. These components can update the DOM directly without re-rendering their parent component, making your app incredibly fast.
+
+## Overview
+
+Reactive components accept observables as children or props and update only the specific parts of the UI that need to change:
+
+```jsx
+import { useObservable } from '@legendapp/state/react'
+import { Memo } from '@legendapp/state/react'
+
+function App() {
+    const count$ = useObservable(0)
+
+    // App never re-renders, only the Memo updates
+    return (
+        <div>
+            Count: <Memo>{count$}</Memo>
+            <button onClick={() => count$.set(v => v + 1)}>+</button>
+        </div>
+    )
+}
+```
+
+## Memo Component
+
+The `Memo` component renders an observable's value and updates only itself when the observable changes.
+
+### Signature
+
+```tsx
+function Memo(props: {
+    children: ObservableParam | (() => ReactNode)
+    scoped?: boolean
+}): ReactElement
+```
+
+### Basic Usage
+
+<Tabs>
+  <Tab title="With Observable">
+    ```jsx
+    import { observable } from '@legendapp/state'
+    import { Memo } from '@legendapp/state/react'
+
+    const count$ = observable(0)
+
+    function Counter() {
+        // Counter never re-renders when count changes
+        return (
+            <div>
+                Count: <Memo>{count$}</Memo>
+                <button onClick={() => count$.set(v => v + 1)}>
+                    Increment
+                </button>
+            </div>
+        )
+    }
+    ```
+  </Tab>
+  <Tab title="With Function">
+    ```jsx
+    import { useObservable } from '@legendapp/state/react'
+    import { Memo } from '@legendapp/state/react'
+
+    function Component() {
+        const user$ = useObservable({ firstName: 'John', lastName: 'Doe' })
+
+        return (
+            <div>
+                Name: <Memo>{() => 
+                    `${user$.firstName.get()} ${user$.lastName.get()}`
+                }</Memo>
+            </div>
+        )
+    }
+    ```
+  </Tab>
+  <Tab title="Scoped">
+    ```jsx
+    import { useObservable } from '@legendapp/state/react'
+    import { Memo } from '@legendapp/state/react'
+
+    function Component() {
+        const count$ = useObservable(0)
+
+        return (
+            <div>
+                {/* With scoped, Memo re-creates when function reference changes */}
+                <Memo scoped>
+                    {() => <ExpensiveComponent count={count$.get()} />}
+                </Memo>
+            </div>
+        )
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### Performance Benefits
+
+```jsx
+import { useObservable } from '@legendapp/state/react'
+import { Memo } from '@legendapp/state/react'
+
+let parentRenders = 0
+
+function ParentComponent() {
+    parentRenders++
+    const count$ = useObservable(0)
+
+    return (
+        <div>
+            <div>Parent rendered {parentRenders} times</div>
+            <div>Count: <Memo>{count$}</Memo></div>
+            <button onClick={() => count$.set(v => v + 1)}>+</button>
+        </div>
+    )
+}
+
+// ParentComponent only renders once!
+// Clicking the button updates only the Memo
+```
+
+## Show Component
+
+Conditionally renders children based on a predicate, with support for else clauses and ready state.
+
+### Signature
+
+```tsx
+function Show<T>(props: {
+    if?: Selector<T>
+    ifReady?: Selector<T>
+    else?: ReactNode | (() => ReactNode)
+    $value?: Observable<T>
+    wrap?: FC<{ children: ReactNode }>
+    children: ReactNode | ((value?: T) => ReactNode)
+}): ReactElement
+```
+
+### Basic Usage
+
+<Tabs>
+  <Tab title="Simple Condition">
+    ```jsx
+    import { useObservable } from '@legendapp/state/react'
+    import { Show } from '@legendapp/state/react'
+
+    function Component() {
+        const isLoggedIn$ = useObservable(false)
+
+        return (
+            <div>
+                <Show if={isLoggedIn$}>
+                    <div>Welcome back!</div>
+                </Show>
+                <button onClick={() => isLoggedIn$.set(true)}>
+                    Log In
+                </button>
+            </div>
+        )
+    }
+    ```
+  </Tab>
+  <Tab title="With Else">
+    ```jsx
+    import { observable } from '@legendapp/state'
+    import { Show } from '@legendapp/state/react'
+
+    const user$ = observable(null)
+
+    function UserProfile() {
+        return (
+            <Show 
+                if={() => user$.get() !== null}
+                else={<div>Please log in</div>}
+            >
+                <div>Welcome, {user$.name.get()}</div>
+            </Show>
+        )
+    }
+    ```
+  </Tab>
+  <Tab title="With Value">
+    ```jsx
+    import { observable } from '@legendapp/state'
+    import { Show } from '@legendapp/state/react'
+
+    const user$ = observable({ name: 'John', age: 30 })
+
+    function Component() {
+        return (
+            <Show if={() => user$.age.get() >= 18} $value={user$}>
+                {(user) => (
+                    <div>{user.name} is an adult</div>
+                )}
+            </Show>
+        )
+    }
+    ```
+  </Tab>
+  <Tab title="If Ready">
+    ```jsx
+    import { useObservable } from '@legendapp/state/react'
+    import { Show } from '@legendapp/state/react'
+
+    function AsyncComponent() {
+        const data$ = useObservable(async () => {
+            const res = await fetch('/api/data')
+            return res.json()
+        })
+
+        return (
+            <Show 
+                ifReady={data$}
+                else={<div>Loading...</div>}
+            >
+                {(data) => <div>Data: {data.name}</div>}
+            </Show>
+        )
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## For Component
+
+Renders lists efficiently, automatically keying items and updating only changed items.
+
+### Signature
+
+```tsx
+function For<T, TProps>(props: {
+    each?: ObservableParam<T[] | Record<any, T> | Map<any, T>>
+    optimized?: boolean
+    item?: FC<ForItemProps<T, TProps>>
+    itemProps?: TProps
+    sortValues?: (A: T, B: T, AKey: string, BKey: string) => number
+    children?: (value: Observable<T>, id: string | undefined) => ReactElement
+}): ReactElement | null
+
+type ForItemProps<T, TProps = {}> = {
+    item$: Observable<T>
+    id?: string
+} & TProps
+```
+
+### Basic Usage
+
+<Tabs>
+  <Tab title="Array">
+    ```jsx
+    import { observable } from '@legendapp/state'
+    import { For } from '@legendapp/state/react'
+    import { observer } from '@legendapp/state/react'
+
+    const todos$ = observable([
+        { id: '1', text: 'Learn Legend-State', done: false },
+        { id: '2', text: 'Build an app', done: false }
+    ])
+
+    const TodoItem = observer(function TodoItem({ item$ }) {
+        return (
+            <div>
+                <input 
+                    type="checkbox"
+                    checked={item$.done.get()}
+                    onChange={(e) => item$.done.set(e.target.checked)}
+                />
+                {item$.text.get()}
+            </div>
+        )
+    })
+
+    function TodoList() {
+        return (
+            <div>
+                <For each={todos$} item={TodoItem} />
+            </div>
+        )
+    }
+    ```
+  </Tab>
+  <Tab title="With Children Function">
+    ```jsx
+    import { observable } from '@legendapp/state'
+    import { For } from '@legendapp/state/react'
+
+    const items$ = observable(['Apple', 'Banana', 'Cherry'])
+
+    function List() {
+        return (
+            <div>
+                <For each={items$}>
+                    {(item$, id) => (
+                        <div key={id}>
+                            {item$.get()}
+                        </div>
+                    )}
+                </For>
+            </div>
+        )
+    }
+    ```
+  </Tab>
+  <Tab title="Object/Map">
+    ```jsx
+    import { observable } from '@legendapp/state'
+    import { For } from '@legendapp/state/react'
+
+    const users$ = observable({
+        user1: { name: 'John', age: 30 },
+        user2: { name: 'Jane', age: 25 }
+    })
+
+    function UserList() {
+        return (
+            <For each={users$}>
+                {(user$, id) => (
+                    <div key={id}>
+                        {id}: {user$.name.get()} ({user$.age.get()})
+                    </div>
+                )}
+            </For>
+        )
+    }
+    ```
+  </Tab>
+  <Tab title="With ItemProps">
+    ```jsx
+    import { observable } from '@legendapp/state'
+    import { For } from '@legendapp/state/react'
+    import { observer } from '@legendapp/state/react'
+
+    const items$ = observable([1, 2, 3])
+
+    const Item = observer(function Item({ item$, prefix }) {
+        return <div>{prefix}: {item$.get()}</div>
+    })
+
+    function List() {
+        return <For each={items$} item={Item} itemProps={{ prefix: 'Item' }} />
+    }
+    ```
+  </Tab>
+  <Tab title="Sorted">
+    ```jsx
+    import { observable } from '@legendapp/state'
+    import { For } from '@legendapp/state/react'
+
+    const items$ = observable([
+        { name: 'Banana', price: 2 },
+        { name: 'Apple', price: 1 },
+        { name: 'Cherry', price: 3 }
+    ])
+
+    function SortedList() {
+        return (
+            <For 
+                each={items$}
+                sortValues={(a, b) => a.price - b.price}
+            >
+                {(item$) => (
+                    <div>{item$.name.get()} - ${item$.price.get()}</div>
+                )}
+            </For>
+        )
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### Optimized Mode
+
+```jsx
+import { observable } from '@legendapp/state'
+import { For } from '@legendapp/state/react'
+
+const items$ = observable([1, 2, 3, 4, 5])
+
+function OptimizedList() {
+    return (
+        <For each={items$} optimized>
+            {(item$) => <div>{item$.get()}</div>}
+        </For>
+    )
+}
+```
+
+<Note>
+`optimized` mode uses shallow tracking to minimize re-renders when only array length changes.
+</Note>
+
+## Switch Component
+
+Renders different content based on a value, like a switch statement.
+
+### Signature
+
+```tsx
+function Switch<T>(props: {
+    value?: Selector<T>
+    children: Partial<Record<any, () => ReactNode>>
+}): ReactElement | null
+```
+
+### Usage
+
+<Tabs>
+  <Tab title="Basic">
+    ```jsx
+    import { useObservable } from '@legendapp/state/react'
+    import { Switch } from '@legendapp/state/react'
+
+    function StatusIndicator() {
+        const status$ = useObservable('loading')
+
+        return (
+            <Switch value={status$}>
+                {{
+                    loading: () => <div>Loading...</div>,
+                    success: () => <div>Success!</div>,
+                    error: () => <div>Error occurred</div>,
+                    default: () => <div>Unknown status</div>
+                }}
+            </Switch>
+        )
+    }
+    ```
+  </Tab>
+  <Tab title="With States">
+    ```jsx
+    import { observable } from '@legendapp/state'
+    import { Switch } from '@legendapp/state/react'
+
+    const view$ = observable('list')
+
+    function App() {
+        return (
+            <div>
+                <nav>
+                    <button onClick={() => view$.set('list')}>List</button>
+                    <button onClick={() => view$.set('grid')}>Grid</button>
+                    <button onClick={() => view$.set('table')}>Table</button>
+                </nav>
+                <Switch value={view$}>
+                    {{
+                        list: () => <ListView />,
+                        grid: () => <GridView />,
+                        table: () => <TableView />,
+                        default: () => <div>Select a view</div>
+                    }}
+                </Switch>
+            </div>
+        )
+    }
+    ```
+  </Tab>
+  <Tab title="Boolean">
+    ```jsx
+    import { useObservable } from '@legendapp/state/react'
+    import { Switch } from '@legendapp/state/react'
+
+    function ToggleView() {
+        const isEnabled$ = useObservable(true)
+
+        return (
+            <Switch value={isEnabled$}>
+                {{
+                    true: () => <div>Enabled</div>,
+                    false: () => <div>Disabled</div>
+                }}
+            </Switch>
+        )
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Reactive Object
+
+The `Reactive` object provides reactive versions of all HTML elements that accept observable props.
+
+### Usage
+
+```jsx
+import { useObservable } from '@legendapp/state/react'
+import { Reactive } from '@legendapp/state/react'
+
+function Component() {
+    const text$ = useObservable('Hello World')
+    const color$ = useObservable('blue')
+    const isVisible$ = useObservable(true)
+
+    return (
+        <div>
+            {/* Props prefixed with $ are reactive */}
+            <Reactive.div 
+                $style={() => ({ color: color$.get() })}
+                $className={() => isVisible$.get() ? 'visible' : 'hidden'}
+            >
+                <Reactive.span $children={text$} />
+            </Reactive.div>
+
+            <input 
+                value={text$.get()}
+                onChange={(e) => text$.set(e.target.value)}
+            />
+        </div>
+    )
+}
+```
+
+### All HTML Elements
+
+`Reactive` provides reactive versions of all HTML elements:
+
+```jsx
+import { Reactive } from '@legendapp/state/react'
+
+<Reactive.div $children={...} />
+<Reactive.span $children={...} />
+<Reactive.button $onClick={...} />
+<Reactive.input $value={...} />
+<Reactive.img $src={...} />
+// ... and all other HTML elements
+```
+
+## reactive() HOC
+
+Create reactive versions of your own components:
+
+```tsx
+function reactive<T>(component: FC<T>): FC<ShapeWith$<T>>
+function reactive<T, K>(
+    component: FC<T>,
+    keys: K[],
+    bindKeys?: BindKeys<T, K>
+): FC<ReactifyProps<T, K>>
+```
+
+<Tabs>
+  <Tab title="Basic">
+    ```jsx
+    import { reactive } from '@legendapp/state/react'
+    import { useObservable } from '@legendapp/state/react'
+
+    function Card({ title, subtitle }) {
+        return (
+            <div>
+                <h3>{title}</h3>
+                <p>{subtitle}</p>
+            </div>
+        )
+    }
+
+    const ReactiveCard = reactive(Card)
+
+    function App() {
+        const title$ = useObservable('Hello')
+        const subtitle$ = useObservable('World')
+
+        return <ReactiveCard $title={title$} $subtitle={subtitle$} />
+    }
+    ```
+  </Tab>
+  <Tab title="With Keys">
+    ```jsx
+    import { reactive } from '@legendapp/state/react'
+
+    function Input({ value, onChange }) {
+        return <input value={value} onChange={onChange} />
+    }
+
+    // Only 'value' prop is reactive
+    const ReactiveInput = reactive(Input, ['value'])
+
+    function App() {
+        const text$ = useObservable('')
+
+        return (
+            <ReactiveInput 
+                $value={text$}
+                onChange={(e) => text$.set(e.target.value)}
+            />
+        )
+    }
+    ```
+  </Tab>
+  <Tab title="With Binding">
+    ```jsx
+    import { reactive } from '@legendapp/state/react'
+
+    function Input({ value, onChange }) {
+        return <input value={value} onChange={onChange} />
+    }
+
+    const ReactiveInput = reactive(
+        Input,
+        ['value'],
+        {
+            value: {
+                handler: 'onChange',
+                getValue: (e) => e.target.value
+            }
+        }
+    )
+
+    function App() {
+        const text$ = useObservable('')
+
+        // Two-way binding!
+        return <ReactiveInput $value={text$} />
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Best Practices
+
+<Tip>
+1. **Use Memo for simple values** - When you just need to display an observable value
+2. **Use Show for conditions** - Better than ternary operators for reactive conditions
+3. **Use For for lists** - More efficient than `.map()` for observable arrays
+4. **Use Switch for multiple states** - Cleaner than nested conditions
+5. **Use Reactive for granular updates** - Update specific props without re-rendering
+</Tip>
+
+<Warning>
+Reactive components are most beneficial when:
+- Parent component is expensive to render
+- Updates are frequent
+- Only small parts of UI need to update
+
+For simple cases, `observer` might be simpler.
+</Warning>
+
+## See Also
+
+<CardGroup cols={2}>
+  <Card title="observer() HOC" icon="eye" href="/react/observer">
+    Automatic tracking for components
+  </Card>
+  <Card title="Fine-Grained Rendering" icon="gauge-high" href="/react/fine-grained-rendering">
+    Advanced performance patterns
+  </Card>
+  <Card title="React Hooks" icon="hook" href="/react/hooks">
+    Complete hooks reference
+  </Card>
+</CardGroup>

@@ -1,0 +1,468 @@
+---
+title: AsyncStorage Plugin
+description: Persist observables to React Native AsyncStorage
+---
+
+The AsyncStorage plugin persists observable data to React Native's AsyncStorage. This is the standard persistence solution for React Native applications.
+
+## Installation
+
+```bash
+npm install @legendapp/state @react-native-async-storage/async-storage
+```
+
+## Setup
+
+```ts
+import { configureObservableSync } from '@legendapp/state/sync'
+import { ObservablePersistAsyncStorage } from '@legendapp/state/persist-plugins/async-storage'
+import AsyncStorage from '@react-native-async-storage/async-storage'
+
+configureObservableSync({
+  persist: {
+    plugin: ObservablePersistAsyncStorage,
+    asyncStorage: {
+      AsyncStorage
+    }
+  }
+})
+```
+
+## Configuration
+
+<ParamField path="asyncStorage.AsyncStorage" type="AsyncStorageStatic" required>
+  The AsyncStorage instance from `@react-native-async-storage/async-storage`
+  
+  ```ts
+  import AsyncStorage from '@react-native-async-storage/async-storage'
+  
+  asyncStorage: {
+    AsyncStorage
+  }
+  ```
+</ParamField>
+
+<ParamField path="asyncStorage.preload" type="boolean | string[]">
+  Preload data on initialization for faster startup
+  
+  ```ts
+  // Preload all keys
+  asyncStorage: {
+    AsyncStorage,
+    preload: true
+  }
+  
+  // Preload specific keys
+  asyncStorage: {
+    AsyncStorage,
+    preload: ['user', 'settings', 'cart']
+  }
+  ```
+</ParamField>
+
+## Usage
+
+### Basic Usage
+
+```ts
+import { synced } from '@legendapp/state/sync'
+
+const user$ = synced({
+  get: () => api.getUser(),
+  persist: {
+    name: 'user'
+    // Uses globally configured AsyncStorage plugin
+  }
+})
+```
+
+### With Preload
+
+```ts
+import AsyncStorage from '@react-native-async-storage/async-storage'
+import { configureObservableSync } from '@legendapp/state/sync'
+import { ObservablePersistAsyncStorage } from '@legendapp/state/persist-plugins/async-storage'
+
+configureObservableSync({
+  persist: {
+    plugin: ObservablePersistAsyncStorage,
+    asyncStorage: {
+      AsyncStorage,
+      preload: ['user', 'settings']  // Fast startup
+    }
+  }
+})
+
+const user$ = synced({
+  get: () => api.getUser(),
+  persist: { name: 'user' }
+})
+
+const settings$ = synced({
+  initial: { theme: 'light' },
+  persist: { name: 'settings' }
+})
+
+// Both are already loaded from preload
+```
+
+## Plugin API
+
+The AsyncStorage plugin implements the `ObservablePersistPlugin` interface:
+
+### initialize()
+
+```ts
+async initialize(config: ObservablePersistPluginOptions): Promise<void>
+```
+
+Initializes the plugin and preloads data if configured.
+
+### loadTable()
+
+```ts
+async loadTable(table: string): Promise<void>
+```
+
+Loads a specific key from AsyncStorage.
+
+### getTable()
+
+```ts
+getTable<T>(table: string, init: object): T
+```
+
+Gets the cached data for a key.
+
+### set()
+
+```ts
+async set(table: string, changes: Change[]): Promise<void>
+```
+
+Applies changes and saves to AsyncStorage.
+
+### getMetadata()
+
+```ts
+getMetadata(table: string): PersistMetadata
+```
+
+Retrieves sync metadata.
+
+### setMetadata()
+
+```ts
+async setMetadata(table: string, metadata: PersistMetadata): Promise<void>
+```
+
+Saves sync metadata.
+
+### deleteTable()
+
+```ts
+async deleteTable(table: string): Promise<void>
+```
+
+Removes data from AsyncStorage.
+
+### deleteMetadata()
+
+```ts
+async deleteMetadata(table: string): Promise<void>
+```
+
+Removes metadata from AsyncStorage.
+
+## Examples
+
+### Complete App Setup
+
+```tsx
+import React from 'react'
+import { configureObservableSync } from '@legendapp/state/sync'
+import { ObservablePersistAsyncStorage } from '@legendapp/state/persist-plugins/async-storage'
+import AsyncStorage from '@react-native-async-storage/async-storage'
+
+// Configure at app startup
+configureObservableSync({
+  persist: {
+    plugin: ObservablePersistAsyncStorage,
+    asyncStorage: {
+      AsyncStorage,
+      preload: true  // Preload all keys
+    }
+  }
+})
+
+export default function App() {
+  return <YourApp />
+}
+```
+
+### User Session
+
+```ts
+import { synced } from '@legendapp/state/sync'
+import { when } from '@legendapp/state'
+
+const user$ = synced({
+  get: () => api.getUser(),
+  persist: { name: 'user' }
+})
+
+// Wait for user to load
+await when(syncState(user$).isPersistLoaded)
+
+if (user$.get()) {
+  // User is logged in
+  navigateToHome()
+} else {
+  // No user, show login
+  navigateToLogin()
+}
+```
+
+### App Settings
+
+```tsx
+import { synced } from '@legendapp/state/sync'
+import { observer } from '@legendapp/state/react'
+
+const settings$ = synced({
+  initial: {
+    theme: 'light',
+    notifications: true,
+    language: 'en'
+  },
+  persist: { name: 'app-settings' }
+})
+
+const SettingsScreen = observer(function SettingsScreen() {
+  return (
+    <View>
+      <Switch
+        value={settings$.theme.get() === 'dark'}
+        onValueChange={(value) => 
+          settings$.theme.set(value ? 'dark' : 'light')
+        }
+      />
+      <Text>Dark Mode</Text>
+    </View>
+  )
+})
+```
+
+### Shopping Cart
+
+```ts
+import { synced } from '@legendapp/state/sync'
+
+interface CartItem {
+  id: string
+  name: string
+  quantity: number
+  price: number
+}
+
+const cart$ = synced<{ items: CartItem[] }>({
+  initial: { items: [] },
+  persist: { name: 'shopping-cart' }
+})
+
+// Add to cart
+function addToCart(item: CartItem) {
+  const items = cart$.items.get()
+  const existing = items.find(i => i.id === item.id)
+  
+  if (existing) {
+    existing.quantity++
+    cart$.items.set([...items])
+  } else {
+    cart$.items.push(item)
+  }
+}
+
+// Clear cart
+function clearCart() {
+  cart$.items.set([])
+}
+```
+
+### Multi-Account
+
+```ts
+const currentUserId$ = observable<string | null>(null)
+
+const userData$ = synced({
+  get: async () => {
+    const userId = currentUserId$.get()
+    if (!userId) return null
+    return api.getUserData(userId)
+  },
+  persist: {
+    name: computed(() => {
+      const userId = currentUserId$.get()
+      return userId ? `user-data-${userId}` : 'user-data'
+    })
+  }
+})
+
+// Switch accounts
+currentUserId$.set('user-123')
+// Loads user-data-user-123 from AsyncStorage
+```
+
+### Offline Support
+
+```tsx
+import { synced } from '@legendapp/state/sync'
+import { observer } from '@legendapp/state/react'
+import NetInfo from '@react-native-community/netinfo'
+
+const isOnline$ = observable(true)
+
+NetInfo.addEventListener(state => {
+  isOnline$.set(state.isConnected ?? false)
+})
+
+const todos$ = synced({
+  get: () => api.getTodos(),
+  set: ({ value }) => api.saveTodos(value),
+  persist: {
+    name: 'todos',
+    retrySync: true  // Retry when back online
+  },
+  waitFor: () => isOnline$.get()  // Wait for connection
+})
+
+const TodoScreen = observer(function TodoScreen() {
+  if (!isOnline$.get()) {
+    return <Text>Offline - changes will sync when online</Text>
+  }
+  
+  return (
+    <FlatList
+      data={todos$.get()}
+      renderItem={({ item }) => <TodoItem item={item} />}
+    />
+  )
+})
+```
+
+### Clear User Data on Logout
+
+```ts
+import { syncState } from '@legendapp/state/sync'
+
+const user$ = synced({
+  persist: { name: 'user' }
+})
+
+const cart$ = synced({
+  persist: { name: 'cart' }
+})
+
+async function logout() {
+  // Clear persisted data
+  await Promise.all([
+    syncState(user$).resetPersistence(),
+    syncState(cart$).resetPersistence()
+  ])
+  
+  // Reset observables
+  user$.set(null)
+  cart$.set({ items: [] })
+  
+  // Navigate to login
+  navigation.navigate('Login')
+}
+```
+
+## Storage Format
+
+Data is stored as JSON strings:
+
+```ts
+const user$ = synced({
+  initial: { name: 'John', email: 'john@example.com' },
+  persist: { name: 'user' }
+})
+
+// AsyncStorage contents:
+// key: 'user'
+// value: '{"name":"John","email":"john@example.com"}'
+
+// Metadata stored separately:
+// key: 'user__m'
+// value: '{"lastSync":1699564800000,"pending":{}}'
+```
+
+## Performance
+
+### Without Preload
+
+```ts
+// Each observable loads individually (slower startup)
+configureObservableSync({
+  persist: {
+    plugin: ObservablePersistAsyncStorage,
+    asyncStorage: { AsyncStorage }
+  }
+})
+
+const user$ = synced({ persist: { name: 'user' } })
+const settings$ = synced({ persist: { name: 'settings' } })
+const cart$ = synced({ persist: { name: 'cart' } })
+
+// 3 separate AsyncStorage.getItem() calls
+```
+
+### With Preload
+
+```ts
+// Load all keys at once (faster startup)
+configureObservableSync({
+  persist: {
+    plugin: ObservablePersistAsyncStorage,
+    asyncStorage: {
+      AsyncStorage,
+      preload: ['user', 'settings', 'cart']
+    }
+  }
+})
+
+const user$ = synced({ persist: { name: 'user' } })
+const settings$ = synced({ persist: { name: 'settings' } })
+const cart$ = synced({ persist: { name: 'cart' } })
+
+// 1 AsyncStorage.multiGet() call
+```
+
+## Best Practices
+
+1. **Use preload**: Load critical data on app startup
+2. **Namespace keys**: Use descriptive, unique names
+3. **Handle errors**: AsyncStorage operations can fail
+4. **Consider MMKV**: For better performance, use [MMKV plugin](/api/persist-plugins/mmkv)
+5. **Clear on logout**: Remove sensitive data when user logs out
+
+## When to Use
+
+**Use AsyncStorage when:**
+- Standard React Native persistence is sufficient
+- Data size is moderate (< 6MB)
+- You don't need synchronous access
+- Cross-platform compatibility is important
+
+**Use MMKV when:**
+- You need better performance
+- Synchronous access is required
+- Data is accessed frequently
+
+## See Also
+
+- [MMKV Plugin](/api/persist-plugins/mmkv) - Faster alternative for React Native
+- [localStorage Plugin](/api/persist-plugins/local-storage) - For web
+- [synced()](/api/sync/synced) - Create synced observables
+- [configureObservableSync()](/api/sync/configure) - Global configuration

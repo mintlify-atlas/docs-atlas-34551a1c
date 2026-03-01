@@ -1,0 +1,274 @@
+---
+title: useObserve
+description: Run side effects when observables change
+---
+
+`useObserve` is a React hook that runs a callback function whenever tracked observables change. It's similar to `useEffect` but automatically tracks observable dependencies.
+
+## Usage
+
+```tsx
+import { useObserve } from '@legendapp/state/react'
+import { state$ } from './state'
+
+function Component() {
+  // Runs whenever state$.count changes
+  useObserve(() => {
+    console.log('Count changed:', state$.count.get())
+  })
+  
+  return <div>Check console</div>
+}
+```
+
+## Signature
+
+```typescript
+// Single callback form
+function useObserve<T>(
+  run: (e: ObserveEvent<T>) => T | void,
+  options?: UseObserveOptions
+): () => void
+
+// Selector + reaction form
+function useObserve<T>(
+  selector: Selector<T>,
+  reaction?: (e: ObserveEventCallback<T>) => any,
+  options?: UseObserveOptions
+): () => void
+```
+
+## Parameters
+
+### Single callback form
+
+<ParamField path="run" type="(e: ObserveEvent<T>) => T | void" required>
+  A function that runs when any tracked observables change. The function automatically tracks any observables accessed with `.get()`.
+  
+  The callback receives an `ObserveEvent` object with:
+  - `previous`: The previous value
+  - `value`: The current value (if tracking a specific observable)
+  - `num`: The number of times this observer has fired
+</ParamField>
+
+### Selector + reaction form
+
+<ParamField path="selector" type="Selector<T>" required>
+  A function or observable to track. Changes to this selector trigger the reaction.
+</ParamField>
+
+<ParamField path="reaction" type="(e: ObserveEventCallback<T>) => any" optional>
+  A function that runs when the selector changes. Receives the same `ObserveEvent` object.
+  
+  If omitted, the selector function itself is treated as both the tracker and the side effect.
+</ParamField>
+
+### Options
+
+<ParamField path="options" type="UseObserveOptions" optional>
+  Configuration options.
+  
+  <Expandable title="properties">
+    <ParamField path="deps" type="any[]">
+      An optional dependency array similar to `useEffect`. When deps change, the observer is recreated.
+    </ParamField>
+    
+    <ParamField path="immediate" type="boolean">
+      If `true`, runs the callback immediately on mount in addition to when values change. Default: `false`.
+    </ParamField>
+    
+    <ParamField path="reaction" type="function">
+      Alternative way to specify the reaction function (can be passed as parameter or in options).
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+## Returns
+
+<ResponseField name="dispose" type="() => void">
+  A cleanup function that stops observing. Called automatically when the component unmounts.
+</ResponseField>
+
+## Examples
+
+### Basic side effect
+
+```tsx
+useObserve(() => {
+  const count = state$.count.get()
+  document.title = `Count: ${count}`
+})
+```
+
+### With selector and reaction
+
+```tsx
+// Only re-runs when user.name changes
+useObserve(
+  () => state$.user.name.get(),
+  ({ value, previous }) => {
+    console.log(`Name changed from ${previous} to ${value}`)
+  }
+)
+```
+
+### Multiple observables
+
+```tsx
+useObserve(() => {
+  const firstName = state$.user.firstName.get()
+  const lastName = state$.user.lastName.get()
+  
+  analytics.track('Name viewed', {
+    fullName: `${firstName} ${lastName}`
+  })
+})
+```
+
+### With dependencies
+
+```tsx
+function UserLogger({ userId }) {
+  // Recreate observer when userId prop changes
+  useObserve(
+    () => {
+      console.log('User data:', state$.users[userId].get())
+    },
+    { deps: [userId] }
+  )
+}
+
+// Alternative: pass deps as second parameter
+useObserve(
+  () => {
+    console.log('User data:', state$.users[userId].get())
+  },
+  [userId]
+)
+```
+
+### Run immediately
+
+```tsx
+useObserve(
+  () => {
+    console.log('Count:', state$.count.get())
+  },
+  { immediate: true }
+)
+// Logs immediately on mount, then on every change
+```
+
+### Async effects
+
+```tsx
+useObserve(() => {
+  const userId = state$.currentUserId.get()
+  
+  if (userId) {
+    fetchUserData(userId).then(data => {
+      state$.userData.set(data)
+    })
+  }
+})
+```
+
+### Manual cleanup
+
+```tsx
+const dispose = useObserve(() => {
+  console.log('Count:', state$.count.get())
+})
+
+// Later: stop observing
+dispose()
+```
+
+### Access event metadata
+
+```tsx
+useObserve((e) => {
+  console.log('Previous:', e.previous)
+  console.log('Current:', e.value)
+  console.log('Call count:', e.num)
+  
+  const count = state$.count.get()
+  console.log('Count:', count)
+})
+```
+
+## Behavior
+
+### Automatic tracking
+
+`useObserve` automatically tracks any observables accessed with `.get()` during execution:
+
+```tsx
+useObserve(() => {
+  if (state$.isLoggedIn.get()) {
+    // This is only tracked when isLoggedIn is true
+    const userName = state$.user.name.get()
+    console.log('Logged in as:', userName)
+  }
+})
+```
+
+### Selector vs single callback
+
+Using a separate selector and reaction can be more efficient:
+
+```tsx
+// ❌ Less efficient - entire function re-runs
+useObserve(() => {
+  const count = state$.count.get()
+  expensiveOperation(count)
+})
+
+// ✅ More efficient - expensive operation only in reaction
+useObserve(
+  () => state$.count.get(),
+  ({ value }) => {
+    expensiveOperation(value)
+  }
+)
+```
+
+### Lifecycle
+
+- Observer is set up on component mount
+- Runs when tracked observables change
+- Automatically disposed on component unmount
+- Recreated if `deps` change
+
+## Comparison with useEffect
+
+```tsx
+// useEffect - manual dependencies
+useEffect(() => {
+  console.log('Count:', state$.count.get())
+}, [state$.count.get()]) // ❌ Needs manual tracking
+
+// useObserve - automatic tracking
+useObserve(() => {
+  console.log('Count:', state$.count.get())
+}) // ✅ Automatically tracks state$.count
+```
+
+## Type Parameters
+
+<ParamField path="T" type="type">
+  The type of the tracked value. Inferred from the selector or callback.
+</ParamField>
+
+## Notes
+
+- Does not cause component re-renders (use `useSelector` for that)
+- Callbacks are not memoized - they use the latest closure values
+- The selector function re-runs on each change to re-track dependencies
+- Use `deps` when the observer needs to respond to prop/state changes
+
+## Related
+
+- [useSelector](/api/react/use-selector) - Track observables and re-render
+- [useObservable](/api/react/use-observable) - Create local observables
+- [observer](/api/react/observer) - HOC for automatic tracking

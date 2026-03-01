@@ -1,0 +1,524 @@
+---
+title: IndexedDB Plugin
+description: Persist observables to IndexedDB for large datasets and offline support
+---
+
+The IndexedDB plugin persists observable data to the browser's IndexedDB. Use this for large datasets, binary data, or when you need better performance than localStorage.
+
+## Installation
+
+```bash
+npm install @legendapp/state
+```
+
+## Usage
+
+```ts
+import { synced, configureObservableSync } from '@legendapp/state/sync'
+import { ObservablePersistIndexedDB } from '@legendapp/state/persist-plugins/indexeddb'
+
+// Configure globally
+configureObservableSync({
+  persist: {
+    plugin: ObservablePersistIndexedDB,
+    indexedDB: {
+      databaseName: 'myapp',
+      version: 1,
+      tableNames: ['users', 'posts', 'settings']
+    }
+  }
+})
+
+// Use in observables
+const users$ = synced({
+  get: () => api.getUsers(),
+  persist: { name: 'users' }
+})
+```
+
+## Configuration
+
+### Global Setup
+
+```ts
+import { configureObservableSync } from '@legendapp/state/sync'
+import { ObservablePersistIndexedDB } from '@legendapp/state/persist-plugins/indexeddb'
+
+configureObservableSync({
+  persist: {
+    plugin: ObservablePersistIndexedDB,
+    indexedDB: {
+      databaseName: 'myapp',
+      version: 1,
+      tableNames: ['users', 'posts', 'comments']
+    }
+  }
+})
+```
+
+### Configuration Options
+
+<ParamField path="databaseName" type="string" required>
+  Name of the IndexedDB database
+  
+  ```ts
+  databaseName: 'myapp'
+  ```
+</ParamField>
+
+<ParamField path="version" type="number" required>
+  Database version number. Increment when schema changes.
+  
+  ```ts
+  version: 1  // Increment to 2, 3, etc. when adding/removing tables
+  ```
+</ParamField>
+
+<ParamField path="tableNames" type="string[]" required>
+  Array of table (object store) names to create
+  
+  ```ts
+  tableNames: ['users', 'posts', 'comments', 'settings']
+  ```
+</ParamField>
+
+<ParamField path="deleteTableNames" type="string[]">
+  Tables to delete during upgrade
+  
+  ```ts
+  deleteTableNames: ['oldTable', 'deprecatedData']
+  ```
+</ParamField>
+
+<ParamField path="onUpgradeNeeded" type="(event: IDBVersionChangeEvent) => void">
+  Custom upgrade handler for advanced schema migrations
+  
+  ```ts
+  onUpgradeNeeded: (event) => {
+    const db = event.target.result
+    // Create custom indexes, etc.
+    const userStore = db.createObjectStore('users', { keyPath: 'id' })
+    userStore.createIndex('email', 'email', { unique: true })
+  }
+  ```
+</ParamField>
+
+## Per-Observable Options
+
+When using `persist` on individual observables, you can specify additional IndexedDB options:
+
+```ts
+const data$ = synced({
+  persist: {
+    name: 'users',
+    plugin: ObservablePersistIndexedDB,
+    indexedDB: {
+      prefixID: 'tenant-123',  // Namespace the data
+      itemID: 'currentUser'    // Store single item
+    }
+  }
+})
+```
+
+<ParamField path="indexedDB.prefixID" type="string">
+  Prefix to namespace data within the same table. Useful for multi-tenant apps.
+  
+  ```ts
+  indexedDB: {
+    prefixID: `tenant-${tenantId}`
+  }
+  ```
+</ParamField>
+
+<ParamField path="indexedDB.itemID" type="string">
+  Store a single item instead of a collection. The item is stored with this ID.
+  
+  ```ts
+  indexedDB: {
+    itemID: 'currentUser'  // Stores at key 'currentUser'
+  }
+  ```
+</ParamField>
+
+## Plugin API
+
+The IndexedDB plugin implements the `ObservablePersistPlugin` interface:
+
+### initialize()
+
+```ts
+async initialize(config: ObservablePersistPluginOptions): Promise<void>
+```
+
+Initializes the database and creates object stores.
+
+### loadTable()
+
+```ts
+async loadTable(table: string, config: PersistOptions): Promise<void>
+```
+
+Loads a table into memory (called automatically).
+
+### getTable()
+
+```ts
+getTable<T>(table: string, init: object, config: PersistOptions): T
+```
+
+Gets the cached table data.
+
+### set()
+
+```ts
+async set(table: string, changes: Change[], config: PersistOptions): Promise<void>
+```
+
+Applies changes to IndexedDB.
+
+### getMetadata()
+
+```ts
+getMetadata(table: string, config: PersistOptions): PersistMetadata
+```
+
+Retrieves sync metadata.
+
+### setMetadata()
+
+```ts
+async setMetadata(table: string, metadata: PersistMetadata, config: PersistOptions): Promise<void>
+```
+
+Saves sync metadata.
+
+### deleteTable()
+
+```ts
+async deleteTable(table: string, config: PersistOptions): Promise<void>
+```
+
+Deletes all data in a table.
+
+### deleteMetadata()
+
+```ts
+async deleteMetadata(table: string, config: PersistOptions): Promise<void>
+```
+
+Deletes metadata for a table.
+
+## Examples
+
+### Basic Setup
+
+```ts
+import { synced, configureObservableSync } from '@legendapp/state/sync'
+import { ObservablePersistIndexedDB } from '@legendapp/state/persist-plugins/indexeddb'
+
+// Configure once at app startup
+configureObservableSync({
+  persist: {
+    plugin: ObservablePersistIndexedDB,
+    indexedDB: {
+      databaseName: 'myapp',
+      version: 1,
+      tableNames: ['users', 'posts']
+    }
+  }
+})
+
+// Use in multiple observables
+const users$ = synced({
+  get: () => api.getUsers(),
+  persist: { name: 'users' }
+})
+
+const posts$ = synced({
+  get: () => api.getPosts(),
+  persist: { name: 'posts' }
+})
+```
+
+### Large Dataset
+
+```ts
+const images$ = synced({
+  get: async () => {
+    const response = await fetch('/api/images')
+    const data = await response.json()
+    return data.map(img => ({
+      id: img.id,
+      data: img.blob  // Binary data
+    }))
+  },
+  persist: {
+    name: 'images',
+    plugin: ObservablePersistIndexedDB
+  }
+})
+```
+
+### Multi-Tenant
+
+```ts
+const tenantId$ = observable('tenant-123')
+
+const tenantData$ = synced({
+  get: () => api.getTenantData(tenantId$.get()),
+  persist: {
+    name: 'tenantData',
+    plugin: ObservablePersistIndexedDB,
+    indexedDB: {
+      prefixID: tenantId$.get()  // Namespace by tenant
+    }
+  }
+})
+
+// Data stored as: tenantData/tenant-123
+```
+
+### Single Item Storage
+
+```ts
+const currentUser$ = synced({
+  get: () => api.getCurrentUser(),
+  persist: {
+    name: 'users',
+    plugin: ObservablePersistIndexedDB,
+    indexedDB: {
+      itemID: 'current'  // Store as single item
+    }
+  }
+})
+
+// Stored at: users/current
+```
+
+### Schema Versioning
+
+```ts
+// Version 1: Initial schema
+configureObservableSync({
+  persist: {
+    plugin: ObservablePersistIndexedDB,
+    indexedDB: {
+      databaseName: 'myapp',
+      version: 1,
+      tableNames: ['users', 'posts']
+    }
+  }
+})
+
+// Later: Version 2 - Add comments table, remove old table
+configureObservableSync({
+  persist: {
+    plugin: ObservablePersistIndexedDB,
+    indexedDB: {
+      databaseName: 'myapp',
+      version: 2,  // Increment version
+      tableNames: ['users', 'posts', 'comments'],  // Add comments
+      deleteTableNames: ['oldDeprecatedTable']  // Remove old
+    }
+  }
+})
+```
+
+### Custom Indexes
+
+```ts
+configureObservableSync({
+  persist: {
+    plugin: ObservablePersistIndexedDB,
+    indexedDB: {
+      databaseName: 'myapp',
+      version: 1,
+      tableNames: ['users'],
+      onUpgradeNeeded: (event) => {
+        const db = event.target.result
+        
+        // Create users store with custom indexes
+        if (!db.objectStoreNames.contains('users')) {
+          const userStore = db.createObjectStore('users', {
+            keyPath: 'id'
+          })
+          
+          // Create indexes for fast lookups
+          userStore.createIndex('email', 'email', { unique: true })
+          userStore.createIndex('name', 'name', { unique: false })
+          userStore.createIndex('createdAt', 'createdAt', { unique: false })
+        }
+      }
+    }
+  }
+})
+```
+
+### Offline-First App
+
+```ts
+import { when } from '@legendapp/state'
+
+configureObservableSync({
+  persist: {
+    plugin: ObservablePersistIndexedDB,
+    retrySync: true,  // Retry failed syncs
+    indexedDB: {
+      databaseName: 'myapp_offline',
+      version: 1,
+      tableNames: ['todos', 'notes']
+    }
+  },
+  retry: {
+    infinite: true  // Keep retrying until online
+  }
+})
+
+const todos$ = synced({
+  get: () => api.getTodos(),
+  set: ({ value }) => api.saveTodos(value),
+  persist: { name: 'todos' }
+})
+
+// Works offline - changes queued until online
+todos$.push({ id: 1, title: 'New todo', done: false })
+```
+
+### Clear All Data
+
+```ts
+import { syncState } from '@legendapp/state/sync'
+
+const users$ = synced({
+  persist: {
+    name: 'users',
+    plugin: ObservablePersistIndexedDB
+  }
+})
+
+const posts$ = synced({
+  persist: {
+    name: 'posts',
+    plugin: ObservablePersistIndexedDB
+  }
+})
+
+// Clear individual table
+await syncState(users$).resetPersistence()
+
+// Clear all tables - close and delete database
+await indexedDB.deleteDatabase('myapp')
+```
+
+## Storage Format
+
+IndexedDB stores objects with `id` as the key path:
+
+```ts
+const users$ = synced({
+  initial: {
+    user1: { id: 'user1', name: 'Alice' },
+    user2: { id: 'user2', name: 'Bob' }
+  },
+  persist: {
+    name: 'users',
+    plugin: ObservablePersistIndexedDB
+  }
+})
+
+// IndexedDB structure:
+// Database: myapp
+// Store: users
+// Records:
+//   { id: 'user1', name: 'Alice' }
+//   { id: 'user2', name: 'Bob' }
+//   { id: 'users__legend_metadata', lastSync: ..., pending: {} }
+```
+
+## Performance
+
+IndexedDB is faster than localStorage for large datasets:
+
+```ts
+// localStorage: O(n) for large JSON strings
+const data1$ = synced({
+  persist: {
+    name: 'largeData',
+    plugin: ObservablePersistLocalStorage
+  }
+})
+
+// IndexedDB: O(1) for individual records
+const data2$ = synced({
+  persist: {
+    name: 'largeData',
+    plugin: ObservablePersistIndexedDB
+  }
+})
+```
+
+## Browser Support
+
+IndexedDB is supported in all modern browsers. The plugin gracefully handles environments where IndexedDB is unavailable:
+
+```ts
+// Safe in SSR
+const data$ = synced({
+  persist: {
+    name: 'data',
+    plugin: ObservablePersistIndexedDB
+  }
+})
+
+// On server/unsupported: no-op (doesn't crash)
+// On client: uses IndexedDB
+```
+
+## Best Practices
+
+1. **Configure globally**: Set up IndexedDB once at app startup
+2. **Version carefully**: Only increment version when schema changes
+3. **Use for large data**: Better than localStorage for > 1MB
+4. **Plan your tables**: Each persisted observable should map to a table
+5. **Handle initialization**: IndexedDB setup is async, wait for `isLoaded`
+
+## Migration from localStorage
+
+```ts
+// Old: localStorage
+import { ObservablePersistLocalStorage } from '@legendapp/state/persist-plugins/local-storage'
+
+configureObservableSync({
+  persist: {
+    plugin: ObservablePersistLocalStorage
+  }
+})
+
+// New: IndexedDB
+import { ObservablePersistIndexedDB } from '@legendapp/state/persist-plugins/indexeddb'
+
+configureObservableSync({
+  persist: {
+    plugin: ObservablePersistIndexedDB,
+    indexedDB: {
+      databaseName: 'myapp',
+      version: 1,
+      tableNames: ['users', 'posts', 'settings']
+    }
+  }
+})
+
+// Migrate data manually if needed
+const oldData = JSON.parse(localStorage.getItem('users') || '{}')
+if (oldData) {
+  users$.set(oldData)
+  localStorage.removeItem('users')
+}
+```
+
+## See Also
+
+- [localStorage Plugin](/api/persist-plugins/local-storage) - For smaller datasets
+- [AsyncStorage Plugin](/api/persist-plugins/async-storage) - For React Native
+- [synced()](/api/sync/synced) - Create synced observables
+- [configureObservableSync()](/api/sync/configure) - Global configuration

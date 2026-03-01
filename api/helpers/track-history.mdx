@@ -1,0 +1,248 @@
+---
+title: 'trackHistory'
+description: 'Track changes to an observable over time with timestamps'
+---
+
+## Overview
+
+The `trackHistory` function creates a history log of all changes to an observable, recording the previous values with timestamps. This is useful for debugging, audit trails, or implementing custom undo/redo functionality.
+
+## Signature
+
+```typescript
+function trackHistory<T>(
+    value$: ObservableParam<T>,
+    targetObservable?: ObservableParam<Record<TimestampAsString, Partial<T>>>
+): ObservableParam<Record<TimestampAsString, any>>
+```
+
+<ParamField path="value$" type="ObservableParam<T>" required>
+  The observable to track changes for
+</ParamField>
+
+<ParamField path="targetObservable" type="ObservableParam<Record<TimestampAsString, Partial<T>>>">
+  Optional observable to store the history. If not provided, a new observable is created.
+</ParamField>
+
+**Returns:** An observable containing a record of changes keyed by timestamp strings.
+
+## Basic Usage
+
+```typescript
+import { observable } from '@legendapp/state';
+import { trackHistory } from '@legendapp/state/helpers/trackHistory';
+
+const user$ = observable({ name: 'Alice', role: 'user' });
+const history$ = trackHistory(user$);
+
+// Make some changes
+user$.set({ name: 'Bob', role: 'admin' });
+
+// Access history
+const historyData = history$.get();
+// {
+//   '1678901234567': { name: 'Alice', role: 'user' }
+// }
+```
+
+## Multiple Changes
+
+Each change is recorded with a new timestamp entry containing the previous values:
+
+```typescript
+import { observable } from '@legendapp/state';
+import { trackHistory } from '@legendapp/state/helpers/trackHistory';
+
+const settings$ = observable({ 
+    theme: 'light', 
+    lang: 'en',
+    notifications: true 
+});
+
+const history$ = trackHistory(settings$);
+
+// Change 1
+settings$.theme.set('dark');
+
+// Wait a moment...
+await new Promise(resolve => setTimeout(resolve, 10));
+
+// Change 2
+settings$.lang.set('fr');
+
+// History now contains two entries
+const historyData = history$.get();
+// {
+//   '1678901234567': { theme: 'light' },
+//   '1678901234577': { lang: 'en' }
+// }
+```
+
+## Batched Changes
+
+When multiple changes happen in a batch, they are recorded together with a single timestamp:
+
+```typescript
+import { observable, beginBatch, endBatch } from '@legendapp/state';
+import { trackHistory } from '@legendapp/state/helpers/trackHistory';
+
+const profile$ = observable({ 
+    firstName: 'John', 
+    lastName: 'Doe',
+    email: 'john@example.com'
+});
+
+const history$ = trackHistory(profile$);
+
+// Batch multiple changes
+beginBatch();
+profile$.firstName.set('Jane');
+profile$.email.set('jane@example.com');
+endBatch();
+
+// History contains one entry with both previous values
+const historyData = history$.get();
+// {
+//   '1678901234567': { 
+//     firstName: 'John', 
+//     email: 'john@example.com' 
+//   }
+// }
+```
+
+## Custom Target Observable
+
+You can provide your own observable to store the history, which is useful when you want to persist the history or share it:
+
+```typescript
+import { observable } from '@legendapp/state';
+import { trackHistory } from '@legendapp/state/helpers/trackHistory';
+import { persistObservable } from '@legendapp/state/persist';
+
+const data$ = observable({ count: 0 });
+const customHistory$ = observable({});
+
+// Use custom observable for history
+trackHistory(data$, customHistory$);
+
+// Optionally persist the history
+persistObservable(customHistory$, {
+    local: 'dataHistory'
+});
+
+// Make changes - they'll be tracked in customHistory$
+data$.count.set(1);
+data$.count.set(2);
+```
+
+## Remote Changes
+
+History tracking automatically skips changes that come from persistence or sync to avoid duplicate tracking:
+
+```typescript
+import { observable } from '@legendapp/state';
+import { trackHistory } from '@legendapp/state/helpers/trackHistory';
+import { persistObservable } from '@legendapp/state/persist';
+
+const state$ = observable({ value: 0 });
+const history$ = trackHistory(state$);
+
+// Persist the state
+persistObservable(state$, {
+    local: 'state'
+});
+
+// Local changes are tracked
+state$.value.set(1); // Tracked
+
+// Changes from persistence/sync are NOT tracked
+// (they already have history on the remote client)
+```
+
+## Accessing History
+
+The history observable is a record keyed by timestamp strings:
+
+```typescript
+const history$ = trackHistory(observable({ x: 1, y: 2 }));
+
+// Get all history entries
+const allHistory = history$.get();
+
+// Get history keys (timestamps) in order
+const timestamps = Object.keys(allHistory).sort();
+
+// Access a specific entry
+const firstChange = allHistory[timestamps[0]];
+
+// Observe history changes
+history$.onChange(({ value }) => {
+    console.log('History updated:', value);
+});
+```
+
+## Use Cases
+
+### Debugging
+
+Track all changes during development:
+
+```typescript
+if (process.env.NODE_ENV === 'development') {
+    const history$ = trackHistory(appState$);
+    
+    // Log history on demand
+    window.showHistory = () => {
+        console.table(history$.get());
+    };
+}
+```
+
+### Audit Trail
+
+Keep a log of user actions:
+
+```typescript
+const document$ = observable({ title: '', content: '' });
+const auditLog$ = trackHistory(document$);
+
+// Persist the audit log
+persistObservable(auditLog$, {
+    local: 'documentAudit'
+});
+```
+
+### Custom Undo/Redo
+
+Build custom undo/redo logic using the history:
+
+```typescript
+const state$ = observable({ value: 0 });
+const history$ = trackHistory(state$);
+
+function undo() {
+    const historyData = history$.get();
+    const timestamps = Object.keys(historyData).sort();
+    
+    if (timestamps.length > 0) {
+        const lastTimestamp = timestamps[timestamps.length - 1];
+        const previousValue = historyData[lastTimestamp];
+        
+        // Restore previous value
+        state$.assign(previousValue);
+        
+        // Remove from history
+        delete historyData[lastTimestamp];
+        history$.set(historyData);
+    }
+}
+```
+
+<Note>
+For built-in undo/redo functionality, use the [`undoRedo`](/api/helpers/undo-redo) helper instead.
+</Note>
+
+## Related
+
+- [undoRedo](/api/helpers/undo-redo) - Built-in undo/redo functionality
+- [onChange](/api/observable/on-change) - Listen to observable changes

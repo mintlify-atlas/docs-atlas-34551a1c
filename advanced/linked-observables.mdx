@@ -1,0 +1,304 @@
+---
+title: Linked Observables
+description: Create two-way computed observables with custom get and set logic
+---
+
+Linked observables allow you to create computed observables with custom getter and setter logic. This enables two-way data binding, transformations, and synchronization between observables.
+
+## Basic Usage
+
+The `linked()` function creates a computed observable with both `get` and `set` capabilities:
+
+```typescript
+import { observable, linked } from '@legendapp/state';
+
+const celsius$ = observable(0);
+
+// Create a two-way computed observable for Fahrenheit
+const fahrenheit$ = observable(
+  linked({
+    get: () => (celsius$.get() * 9) / 5 + 32,
+    set: ({ value }) => celsius$.set(((value - 32) * 5) / 9),
+  })
+);
+
+fahrenheit$.set(32); // Sets celsius to 0
+celsius$.set(100);   // Updates fahrenheit to 212
+```
+
+## Type Signature
+
+```typescript
+function linked<T>(
+  params: LinkedOptions<T> | (() => T),
+  options?: LinkedOptions<T>
+): Linked<T>
+
+interface LinkedOptions<T> {
+  get?: () => Promise<T> | T;
+  set?: (params: SetParams<T>) => void | Promise<any>;
+  waitFor?: Selector<unknown>;
+  waitForSet?: WaitForSet<T>;
+  initial?: (() => T) | T;
+  activate?: 'auto' | 'lazy';
+}
+
+interface SetParams<T> {
+  value: T;
+  getPrevious: () => T;
+  changes: Change[];
+  isFromSync: boolean;
+  isFromPersist: boolean;
+}
+```
+
+## Shorthand Syntax
+
+You can pass the `get` function as the first parameter:
+
+```typescript
+const fullName$ = observable(
+  linked(
+    () => `${firstName$.get()} ${lastName$.get()}`,
+    {
+      set: ({ value }) => {
+        const [first, last] = value.split(' ');
+        firstName$.set(first);
+        lastName$.set(last || '');
+      },
+    }
+  )
+);
+```
+
+## Synchronizing Multiple Observables
+
+Linked observables are perfect for synchronizing state across multiple observables:
+
+```typescript
+const checkboxes$ = observable([false, false, false]);
+
+// "Select All" checkbox that syncs with individual checkboxes
+const selectAll$ = observable(
+  linked({
+    get: () => checkboxes$.get().every((checked) => checked),
+    set: ({ value }) => {
+      checkboxes$.forEach((checkbox) => checkbox.set(value));
+    },
+  })
+);
+
+selectAll$.set(true); // All checkboxes become true
+```
+
+## Nested Property Access
+
+You can set child properties of linked observables:
+
+```typescript
+const user$ = observable({ firstName: 'John', lastName: 'Doe' });
+
+const userCopy$ = observable(
+  linked({
+    get: () => user$.get(),
+    set: ({ value }) => user$.set(value),
+  })
+);
+
+// Setting a child property works
+userCopy$.firstName.set('Jane');
+console.log(user$.firstName.get()); // 'Jane'
+```
+
+## Setting Before Activation
+
+Linked observables can be set before they're activated (before the `get` function runs):
+
+```typescript
+const remote$ = observable(
+  linked({
+    get: async () => {
+      const response = await fetch('/api/data');
+      return response.json();
+    },
+    set: async ({ value }) => {
+      await fetch('/api/data', {
+        method: 'POST',
+        body: JSON.stringify(value),
+      });
+    },
+  })
+);
+
+// This works even before the data is loaded
+remote$.set({ name: 'New Value' });
+```
+
+## Batched Updates
+
+When setting multiple properties, the setter receives the batched changes:
+
+```typescript
+const state$ = observable({ a: 1, b: 2 });
+
+const synced$ = observable(
+  linked({
+    get: () => state$.get(),
+    set: ({ value }) => {
+      // Receives the complete updated object
+      console.log(value); // { a: 5, b: 10 }
+      state$.set(value);
+    },
+  })
+);
+
+batch(() => {
+  synced$.a.set(5);
+  synced$.b.set(10);
+}); // Setter called once with both changes
+```
+
+## Async Getters
+
+Linked observables support async getters for loading remote data:
+
+```typescript
+const userId$ = observable('user-123');
+
+const userData$ = observable(
+  linked({
+    get: async () => {
+      const id = userId$.get();
+      const response = await fetch(`/api/users/${id}`);
+      return response.json();
+    },
+    set: async ({ value }) => {
+      await fetch(`/api/users/${userId$.get()}`, {
+        method: 'PUT',
+        body: JSON.stringify(value),
+      });
+    },
+  })
+);
+
+// The observable updates when userId changes
+userId$.set('user-456'); // Triggers a new fetch
+```
+
+## Activation Modes
+
+Control when the linked observable activates:
+
+```typescript
+// Lazy activation (default) - only activates when accessed
+const lazy$ = observable(
+  linked({
+    get: () => expensiveComputation(),
+    activate: 'lazy',
+  })
+);
+
+// Auto activation - activates immediately
+const auto$ = observable(
+  linked({
+    get: () => someValue$.get(),
+    activate: 'auto',
+  })
+);
+```
+
+## Initial Value
+
+Provide an initial value before the getter runs:
+
+```typescript
+const data$ = observable(
+  linked({
+    get: async () => {
+      const response = await fetch('/api/data');
+      return response.json();
+    },
+    initial: { loading: true },
+  })
+);
+
+console.log(data$.get()); // { loading: true }
+// Later: fetched data
+```
+
+## Wait Conditions
+
+Delay activation until certain conditions are met:
+
+```typescript
+const isAuthenticated$ = observable(false);
+const userId$ = observable<string>();
+
+const userData$ = observable(
+  linked({
+    get: async () => {
+      const response = await fetch(`/api/users/${userId$.get()}`);
+      return response.json();
+    },
+    // Only activate when authenticated and userId is set
+    waitFor: () => isAuthenticated$.get() && userId$.get(),
+  })
+);
+```
+
+## Use Cases
+
+### Form Field Transformations
+
+```typescript
+const rawValue$ = observable('');
+
+const formattedValue$ = observable(
+  linked({
+    get: () => rawValue$.get().toUpperCase(),
+    set: ({ value }) => rawValue$.set(value.toLowerCase()),
+  })
+);
+```
+
+### State Derivation
+
+```typescript
+const items$ = observable([{ done: false }, { done: true }]);
+
+const allDone$ = observable(
+  linked({
+    get: () => items$.get().every((item) => item.done),
+    set: ({ value }) => {
+      items$.forEach((item) => item.done.set(value));
+    },
+  })
+);
+```
+
+### Type Conversion
+
+```typescript
+const numberValue$ = observable(0);
+
+const stringValue$ = observable(
+  linked({
+    get: () => numberValue$.get().toString(),
+    set: ({ value }) => numberValue$.set(Number(value)),
+  })
+);
+```
+
+## Best Practices
+
+1. **Keep getters pure**: Getter functions should not have side effects
+2. **Handle edge cases**: Account for undefined or null values in transformations
+3. **Use batching**: When setting multiple related values, use `batch()` for better performance
+4. **Avoid circular dependencies**: Be careful not to create infinite loops between linked observables
+5. **Consider async carefully**: Use async getters only when necessary, as they add complexity
+
+## Related
+
+- [Computed Observables](/core/computed-observables) - Read-only computed values
+- [when()](/advanced/when) - Wait for conditions
+- [observe()](/core/observing-changes) - React to changes

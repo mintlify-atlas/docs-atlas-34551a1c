@@ -1,0 +1,151 @@
+---
+title: "Installation"
+description: "Get started with Legend-State in your project"
+---
+
+## Install Legend-State
+
+Install Legend-State using your preferred package manager:
+
+<CodeGroup>
+
+```bash npm
+npm install @legendapp/state
+```
+
+```bash yarn
+yarn add @legendapp/state
+```
+
+```bash pnpm
+pnpm add @legendapp/state
+```
+
+```bash bun
+bun add @legendapp/state
+```
+
+</CodeGroup>
+
+## Package Exports
+
+Legend-State provides several entry points for different use cases:
+
+### Core State Management
+
+```javascript
+import { observable, observe } from "@legendapp/state"
+```
+
+The main package exports all core state management functionality including:
+
+- `observable` - Create observable state
+- `observe` - React to state changes
+- `computed` - Create computed observables
+- `batch` - Batch multiple changes
+- `when` - Wait for conditions
+- Helper functions and utilities
+
+### React Integration
+
+```javascript
+import { observer, useObservable } from "@legendapp/state/react"
+```
+
+The React package exports hooks and components:
+
+- `observer` - HOC for reactive components
+- `useObservable` - Create local observable state
+- `useSelector` - Subscribe to observable changes
+- `useObserve` - Run side effects on changes
+- `Memo`, `Show`, `For`, `Switch` - Reactive components
+- `Reactive` - Make any component reactive
+
+### Sync & Persistence
+
+```javascript
+import { syncedKeel } from "@legendapp/state/sync-plugins/keel"
+import { syncedSupabase } from "@legendapp/state/sync-plugins/supabase"
+import { syncedFetch } from "@legendapp/state/sync-plugins/fetch"
+import { syncedQuery } from "@legendapp/state/sync-plugins/tanstack-query"
+```
+
+Sync plugins for various backends:
+
+- Keel
+- Supabase
+- TanStack Query
+- Firebase
+- Fetch API
+
+### Local Persistence
+
+```javascript
+import { ObservablePersistLocalStorage } from "@legendapp/state/persist-plugins/local-storage"
+import { ObservablePersistIndexedDB } from "@legendapp/state/persist-plugins/indexeddb"
+import { ObservablePersistAsyncStorage } from "@legendapp/state/persist-plugins/async-storage"
+import { ObservablePersistMMKV } from "@legendapp/state/persist-plugins/mmkv"
+```
+
+Persistence adapters for different storage mechanisms:
+
+- Local Storage (browser)
+- IndexedDB (browser)
+- AsyncStorage (React Native)
+- MMKV (React Native)
+
+## Requirements
+
+Legend-State has minimal requirements:
+
+- **Node.js**: >= 16.6.0
+- **npm**: >= 8.11.0
+- **React** (optional): >= 16.8.0 for hooks support
+
+<Note>
+  Legend-State works in any JavaScript environment. React is only required if you're using the React integration features.
+</Note>
+
+## TypeScript Support
+
+Legend-State is written in TypeScript and includes full type definitions out of the box. No additional `@types` packages are needed.
+
+```typescript
+import { observable, Observable } from "@legendapp/state"
+
+interface User {
+  id: string
+  name: string
+  age: number
+}
+
+const user$: Observable<User> = observable({
+  id: '1',
+  name: 'John',
+  age: 30
+})
+
+// Fully typed!
+const name = user$.name.get() // string
+const age = user$.age.get()   // number
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart Guide" icon="rocket" href="/quickstart">
+    Build your first app with Legend-State in minutes.
+  </Card>
+  
+  <Card title="Core Concepts" icon="book" href="/core/observables">
+    Learn about observables and how to use them.
+  </Card>
+  
+  <Card title="React Integration" icon="react" href="/react/overview">
+    Integrate Legend-State with your React applications.
+  </Card>
+  
+  <Card title="Sync & Persistence" icon="database" href="/sync/overview">
+    Set up data synchronization and local persistence.
+  </Card>
+</CardGroup>

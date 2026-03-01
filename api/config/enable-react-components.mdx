@@ -1,0 +1,294 @@
+---
+title: 'enableReactComponents'
+description: 'Enable reactive HTML components for React'
+---
+
+## Overview
+
+The `enableReactComponents` function configures Legend-State's reactive component system for React web applications. It enables automatic two-way binding for standard HTML form elements.
+
+<Warning>
+**Deprecated:** This API is marked for removal in v3. Use the reactive components directly without calling this function in newer applications.
+</Warning>
+
+## Signature
+
+```typescript
+function enableReactComponents(): void
+```
+
+No parameters required.
+
+## What It Does
+
+Enabling React components configures reactive bindings for:
+
+- `<input>` - Text inputs, checkboxes, radio buttons, etc.
+- `<textarea>` - Multi-line text inputs
+- `<select>` - Dropdown selects
+
+These components can bind directly to observables using the `$` prop prefix.
+
+## Usage
+
+```typescript
+import { enableReactComponents } from '@legendapp/state/config/enableReactComponents';
+
+// Call once at app startup
+enableReactComponents();
+```
+
+## Reactive Component Bindings
+
+Once enabled, you can use reactive components with the `$` prop syntax:
+
+### Text Input
+
+```typescript
+import { observable } from '@legendapp/state';
+import { Reactive } from '@legendapp/state/react';
+import { enableReactComponents } from '@legendapp/state/config/enableReactComponents';
+
+enableReactComponents();
+
+const form$ = observable({ name: '' });
+
+function NameInput() {
+    return (
+        <Reactive.input
+            $value={form$.name}
+            placeholder="Enter name"
+        />
+    );
+}
+```
+
+The `$value` prop creates a two-way binding:
+- Input displays current value from `form$.name`
+- Changes update `form$.name` automatically
+- Component re-renders when `form$.name` changes
+
+### Checkbox
+
+```typescript
+import { observable } from '@legendapp/state';
+import { Reactive } from '@legendapp/state/react';
+
+const settings$ = observable({ notifications: false });
+
+function Settings() {
+    return (
+        <Reactive.input
+            type="checkbox"
+            $checked={settings$.notifications}
+        />
+    );
+}
+```
+
+Checkboxes use `$checked` for the reactive binding.
+
+### Textarea
+
+```typescript
+import { observable } from '@legendapp/state';
+import { Reactive } from '@legendapp/state/react';
+
+const post$ = observable({ content: '' });
+
+function Editor() {
+    return (
+        <Reactive.textarea
+            $value={post$.content}
+            rows={10}
+        />
+    );
+}
+```
+
+### Select
+
+```typescript
+import { observable } from '@legendapp/state';
+import { Reactive } from '@legendapp/state/react';
+
+const settings$ = observable({ theme: 'light' });
+
+function ThemeSelector() {
+    return (
+        <Reactive.select $value={settings$.theme}>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+            <option value="auto">Auto</option>
+        </Reactive.select>
+    );
+}
+```
+
+## Binding Configuration
+
+The function configures these bindings internally:
+
+### Input Bindings
+
+```typescript
+{
+    value: {
+        handler: 'onChange',
+        getValue: (e) => e.target.value,
+        defaultValue: ''
+    },
+    checked: {
+        handler: 'onChange',
+        getValue: (e) => e.target.checked
+    }
+}
+```
+
+### Textarea & Select Bindings
+
+```typescript
+{
+    value: {
+        handler: 'onChange',
+        getValue: (e) => e.target.value,
+        defaultValue: ''
+    }
+}
+```
+
+## Complete Form Example
+
+```typescript
+import { observable } from '@legendapp/state';
+import { Reactive, observer } from '@legendapp/state/react';
+import { enableReactComponents } from '@legendapp/state/config/enableReactComponents';
+
+enableReactComponents();
+
+const form$ = observable({
+    name: '',
+    email: '',
+    bio: '',
+    newsletter: false,
+    theme: 'light'
+});
+
+const FormComponent = observer(() => {
+    return (
+        <form>
+            <div>
+                <label>Name:</label>
+                <Reactive.input 
+                    $value={form$.name}
+                    placeholder="Your name"
+                />
+            </div>
+            
+            <div>
+                <label>Email:</label>
+                <Reactive.input 
+                    type="email"
+                    $value={form$.email}
+                    placeholder="your@email.com"
+                />
+            </div>
+            
+            <div>
+                <label>Bio:</label>
+                <Reactive.textarea 
+                    $value={form$.bio}
+                    rows={5}
+                />
+            </div>
+            
+            <div>
+                <label>
+                    <Reactive.input 
+                        type="checkbox"
+                        $checked={form$.newsletter}
+                    />
+                    Subscribe to newsletter
+                </label>
+            </div>
+            
+            <div>
+                <label>Theme:</label>
+                <Reactive.select $value={form$.theme}>
+                    <option value="light">Light</option>
+                    <option value="dark">Dark</option>
+                    <option value="auto">Auto</option>
+                </Reactive.select>
+            </div>
+            
+            <pre>{JSON.stringify(form$.get(), null, 2)}</pre>
+        </form>
+    );
+});
+```
+
+## TypeScript Support
+
+The module declaration adds types for reactive HTML elements:
+
+```typescript
+import type { IReactive } from '@legendapp/state/react';
+
+declare module '@legendapp/state/react' {
+    interface IReactive extends FCReactiveObject<JSX.IntrinsicElements> {}
+}
+```
+
+This enables TypeScript autocomplete and type checking for reactive components.
+
+## Migration Guide
+
+<Warning>
+Since this API is deprecated, consider using alternative approaches for new code:
+</Warning>
+
+### Alternative: Direct Binding
+
+```typescript
+import { observer } from '@legendapp/state/react';
+import { observable } from '@legendapp/state';
+
+const text$ = observable('');
+
+const Input = observer(() => (
+    <input
+        value={text$.get()}
+        onChange={(e) => text$.set(e.target.value)}
+    />
+));
+```
+
+### Alternative: Custom Hooks
+
+```typescript
+import { useObservable } from '@legendapp/state/react';
+
+function useInputBinding(obs$) {
+    return {
+        value: obs$.get(),
+        onChange: (e) => obs$.set(e.target.value)
+    };
+}
+
+function Input() {
+    const text$ = useObservable('');
+    const binding = useInputBinding(text$);
+    
+    return <input {...binding} />;
+}
+```
+
+## React Native
+
+For React Native applications, use [`enableReactNativeComponents`](/api/config/enable-react-native-components) instead.
+
+## Related
+
+- [enableReactNativeComponents](/api/config/enable-react-native-components) - React Native version
+- [Reactive](/api/react/reactive) - Reactive component API
+- [observer](/api/react/observer) - Component tracking

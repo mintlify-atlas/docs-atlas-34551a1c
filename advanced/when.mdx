@@ -1,0 +1,403 @@
+---
+title: when() and whenReady()
+description: Wait for observables to meet specific conditions
+---
+
+The `when()` and `whenReady()` functions allow you to wait for observables to meet specific conditions. They return promises that resolve when the condition is met, making them perfect for async workflows.
+
+## when()
+
+Waits for a predicate to become truthy.
+
+### Type Signatures
+
+```typescript
+function when<T>(predicate: Promise<T>): Promise<T>;
+function when<T>(predicate: Selector<T>): Promise<T>;
+function when<T>(predicate: Selector<T>[]): Promise<T[]>;
+function when<T, T2>(
+  predicate: Selector<T>,
+  effect: (value: T) => T2
+): Promise<T2>;
+
+type Selector<T> = 
+  | ObservableParam<T>
+  | ObservableEvent
+  | (() => ObservableParam<T>)
+  | (() => T)
+  | T;
+```
+
+### Basic Usage
+
+```typescript
+import { observable, when } from '@legendapp/state';
+
+const isReady$ = observable(false);
+
+// Wait for the observable to become true
+await when(isReady$);
+console.log('Ready!');
+```
+
+### With Functions
+
+You can pass a function that returns a value:
+
+```typescript
+const count$ = observable(0);
+
+// Wait for count to be greater than 5
+await when(() => count$.get() > 5);
+console.log('Count is greater than 5');
+```
+
+### With Effect
+
+Run an effect function when the condition is met:
+
+```typescript
+const user$ = observable<User | null>(null);
+
+const userName = await when(
+  user$,
+  (user) => user.name
+);
+
+console.log('User name:', userName);
+```
+
+### Multiple Conditions
+
+Wait for multiple observables to become truthy:
+
+```typescript
+const isAuth$ = observable(false);
+const hasPermission$ = observable(false);
+
+// Wait for both to be true
+await when([isAuth$, hasPermission$]);
+console.log('Authenticated and authorized!');
+```
+
+### With Promises
+
+The `when()` function can also handle regular promises:
+
+```typescript
+const fetchData = async () => {
+  const response = await fetch('/api/data');
+  return response.json();
+};
+
+const data = await when(
+  fetchData(),
+  (result) => result.items
+);
+```
+
+## whenReady()
+
+Waits for a value to be "ready" - not empty, null, or undefined.
+
+### Type Signatures
+
+```typescript
+function whenReady<T>(predicate: Promise<T>): Promise<T>;
+function whenReady<T>(predicate: Selector<T>): Promise<T>;
+function whenReady<T>(predicate: Selector<T>[]): Promise<T[]>;
+function whenReady<T, T2>(
+  predicate: Selector<T>,
+  effect: (value: T) => T2
+): Promise<T2>;
+```
+
+### What is "Ready"?
+
+A value is considered ready if it's NOT:
+- `null`
+- `undefined`
+- Empty string (`''`)
+- Empty array (`[]`)
+- Empty object (`{}`)
+
+### Basic Usage
+
+```typescript
+const data$ = observable<string | null>(null);
+
+// Wait for data to have a value
+await whenReady(data$);
+console.log('Data is ready:', data$.get());
+```
+
+### Waiting for Data Load
+
+Perfect for waiting for async data to load:
+
+```typescript
+const userData$ = observable(
+  linked({
+    get: async () => {
+      const response = await fetch('/api/user');
+      return response.json();
+    },
+  })
+);
+
+// userData$ starts as undefined
+await whenReady(userData$);
+// Now userData$ has the fetched value
+console.log(userData$.get());
+```
+
+### With Arrays
+
+Wait for an array to have items:
+
+```typescript
+const items$ = observable<string[]>([]);
+
+setTimeout(() => {
+  items$.set(['apple', 'banana']);
+}, 1000);
+
+await whenReady(items$);
+console.log('Items loaded:', items$.get());
+```
+
+### With Objects
+
+Wait for an object to have properties:
+
+```typescript
+const config$ = observable<Record<string, any>>({});
+
+await whenReady(config$);
+console.log('Config loaded:', config$.get());
+```
+
+### Multiple Ready Conditions
+
+```typescript
+const user$ = observable<User | null>(null);
+const settings$ = observable<Settings | null>(null);
+
+// Wait for both to be ready
+const [user, settings] = await whenReady([user$, settings$]);
+```
+
+## Combining when() and whenReady()
+
+```typescript
+const isOnline$ = observable(false);
+const data$ = observable<Data | null>(null);
+
+// Wait for online AND data to be ready
+await Promise.all([
+  when(isOnline$),
+  whenReady(data$),
+]);
+
+console.log('Online and data is ready');
+```
+
+## Use Cases
+
+### Wait for Authentication
+
+```typescript
+const auth$ = observable<{ user: User } | null>(null);
+
+async function requireAuth() {
+  await whenReady(auth$);
+  return auth$.user.get();
+}
+
+const user = await requireAuth();
+```
+
+### Data Dependencies
+
+Wait for prerequisite data before loading dependent data:
+
+```typescript
+const userId$ = observable<string | null>(null);
+
+const userPosts$ = observable(
+  linked({
+    get: async () => {
+      // Wait for userId to be set
+      const userId = await whenReady(userId$);
+      const response = await fetch(`/api/users/${userId}/posts`);
+      return response.json();
+    },
+  })
+);
+```
+
+### Async Component Setup
+
+```typescript
+const config$ = observable<AppConfig | null>(null);
+const isInitialized$ = observable(false);
+
+async function initializeApp() {
+  // Load config
+  const response = await fetch('/api/config');
+  config$.set(await response.json());
+
+  // Wait for other systems
+  await when(() => {
+    const config = config$.get();
+    return config && config.apiKey && config.endpoint;
+  });
+
+  isInitialized$.set(true);
+}
+
+// In your component
+await when(isInitialized$);
+// App is ready to use
+```
+
+### Conditional Navigation
+
+```typescript
+const canNavigate$ = observable(false);
+
+function navigate(path: string) {
+  return when(canNavigate$, () => {
+    router.push(path);
+  });
+}
+
+await navigate('/dashboard');
+```
+
+### Polling Until Complete
+
+```typescript
+const jobStatus$ = observable<'pending' | 'complete'>('pending');
+
+// Poll every second
+const pollInterval = setInterval(async () => {
+  const status = await checkJobStatus();
+  jobStatus$.set(status);
+}, 1000);
+
+// Wait for completion
+await when(() => jobStatus$.get() === 'complete');
+clearInterval(pollInterval);
+
+console.log('Job complete!');
+```
+
+### Reactive Workflows
+
+```typescript
+const step$ = observable(1);
+const formData$ = observable({});
+
+async function handleWorkflow() {
+  // Step 1: Wait for basic info
+  await when(() => step$.get() === 1);
+  console.log('Collecting basic info...');
+
+  // Step 2: Wait for details
+  await when(() => step$.get() === 2);
+  console.log('Collecting details...');
+
+  // Step 3: Wait for confirmation
+  await when(() => step$.get() === 3);
+  console.log('Submitting...');
+
+  await submitForm(formData$.get());
+}
+```
+
+## Comparison: when() vs whenReady()
+
+| Feature | when() | whenReady() |
+|---------|--------|-------------|
+| Condition | Truthy value | Non-empty value |
+| Empty array | Truthy ✓ | Not ready ✗ |
+| Empty object | Truthy ✓ | Not ready ✗ |
+| Empty string | Falsy ✗ | Not ready ✗ |
+| `0` or `false` | Falsy ✗ | Ready ✓ |
+| `null`/`undefined` | Falsy ✗ | Not ready ✗ |
+
+```typescript
+const value$ = observable(0);
+
+// when() waits forever (0 is falsy)
+when(value$); // Never resolves
+
+// whenReady() resolves immediately (0 is "ready")
+await whenReady(value$); // Resolves right away
+```
+
+## With Observables from Promises
+
+```typescript
+const data$ = observable(
+  new Promise((resolve) => {
+    setTimeout(() => resolve({ message: 'Hello' }), 1000);
+  })
+);
+
+// Wait for the promise to resolve
+const result = await when(data$);
+console.log(result.message); // 'Hello'
+```
+
+## Cleanup and Cancellation
+
+The promises returned by `when()` and `whenReady()` automatically stop observing when they resolve:
+
+```typescript
+const count$ = observable(0);
+
+// This creates an observer that automatically disposes
+const promise = when(() => count$.get() > 5);
+
+count$.set(10); // Promise resolves, observer is disposed
+// Further changes to count$ won't affect anything
+```
+
+## Best Practices
+
+1. **Use whenReady() for data loading**: It's specifically designed for async data
+2. **Combine with async/await**: Makes async code more readable
+3. **Don't forget timeout handling**: Consider adding timeouts for better UX
+4. **Use effects for transformations**: The effect parameter is great for extracting values
+5. **Array predicates for multiple conditions**: Cleaner than nested promises
+
+## Timeout Pattern
+
+Add timeouts to prevent waiting forever:
+
+```typescript
+const data$ = observable<Data | null>(null);
+
+async function getDataWithTimeout(timeoutMs: number) {
+  return Promise.race([
+    whenReady(data$),
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Timeout')), timeoutMs)
+    ),
+  ]);
+}
+
+try {
+  await getDataWithTimeout(5000);
+} catch (error) {
+  console.error('Data loading timed out');
+}
+```
+
+## Related
+
+- [Computed Observables](/core/computed-observables) - Reactive computed values
+- [linked()](/advanced/linked-observables) - Two-way computed observables
+- [observe()](/core/observing#observe) - React to changes

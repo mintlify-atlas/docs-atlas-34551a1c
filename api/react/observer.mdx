@@ -1,0 +1,379 @@
+---
+title: observer
+description: Higher-order component for automatic observable tracking and re-rendering
+---
+
+`observer` is a higher-order component (HOC) that wraps a React component to automatically track observable access and re-render when tracked observables change.
+
+## Usage
+
+```tsx
+import { observer } from '@legendapp/state/react'
+import { state$ } from './state'
+
+const Counter = observer(function Counter() {
+  // Component automatically re-renders when state$.count changes
+  return (
+    <div>
+      <div>Count: {state$.count.get()}</div>
+      <button onClick={() => state$.count.set(v => v + 1)}>
+        Increment
+      </button>
+    </div>
+  )
+})
+```
+
+## Signature
+
+```typescript
+function observer<P extends FC<any>>(component: P): P
+```
+
+## Parameters
+
+<ParamField path="component" type="FC<P>" required>
+  A React functional component to wrap with automatic observable tracking.
+  
+  The component can be:
+  - A regular function component
+  - A component wrapped with `forwardRef`
+  - A component wrapped with `memo`
+  
+  The observer will unwrap and re-wrap these HOCs automatically.
+</ParamField>
+
+## Returns
+
+<ResponseField name="component" type="FC<P>">
+  The wrapped component with automatic observable tracking. The component is automatically wrapped with `React.memo` for performance optimization.
+</ResponseField>
+
+## Examples
+
+### Basic usage
+
+```tsx
+const TodoList = observer(() => {
+  const todos = state$.todos.get()
+  
+  return (
+    <ul>
+      {todos.map(todo => (
+        <li key={todo.id}>{todo.text}</li>
+      ))}
+    </ul>
+  )
+})
+```
+
+### With props
+
+```tsx
+interface Props {
+  userId: string
+}
+
+const UserProfile = observer(({ userId }: Props) => {
+  const user = state$.users[userId].get()
+  
+  return (
+    <div>
+      <h1>{user.name}</h1>
+      <p>{user.email}</p>
+    </div>
+  )
+})
+```
+
+### Accessing nested observables
+
+```tsx
+const ProductDetails = observer(() => {
+  // Each .get() is tracked - component re-renders when any of these change
+  const name = state$.product.name.get()
+  const price = state$.product.price.get()
+  const inStock = state$.product.inStock.get()
+  
+  return (
+    <div>
+      <h2>{name}</h2>
+      <p>Price: ${price}</p>
+      {inStock ? <span>In Stock</span> : <span>Out of Stock</span>}
+    </div>
+  )
+})
+```
+
+### With forwardRef
+
+```tsx
+const Input = observer(
+  forwardRef<HTMLInputElement, { label: string }>((props, ref) => {
+    const value = state$.inputValue.get()
+    
+    return (
+      <div>
+        <label>{props.label}</label>
+        <input
+          ref={ref}
+          value={value}
+          onChange={(e) => state$.inputValue.set(e.target.value)}
+        />
+      </div>
+    )
+  })
+)
+```
+
+### Conditional tracking
+
+```tsx
+const ConditionalDisplay = observer(() => {
+  const showDetails = state$.showDetails.get()
+  
+  return (
+    <div>
+      <h1>Header</h1>
+      {showDetails && (
+        // state$.details is only tracked when showDetails is true
+        <div>{state$.details.get()}</div>
+      )}
+    </div>
+  )
+})
+```
+
+### Multiple observables
+
+```tsx
+const Dashboard = observer(() => {
+  const user = state$.currentUser.get()
+  const notifications = state$.notifications.get()
+  const messages = state$.messages.get()
+  
+  return (
+    <div>
+      <Header user={user} />
+      <NotificationBadge count={notifications.length} />
+      <MessageList messages={messages} />
+    </div>
+  )
+})
+```
+
+### With derived data
+
+```tsx
+const CartSummary = observer(() => {
+  const items = state$.cart.items.get()
+  
+  // Computed inline - recalculates on every render but only re-renders when items change
+  const total = items.reduce((sum, item) => sum + item.price * item.quantity, 0)
+  const itemCount = items.reduce((sum, item) => sum + item.quantity, 0)
+  
+  return (
+    <div>
+      <p>Items: {itemCount}</p>
+      <p>Total: ${total.toFixed(2)}</p>
+    </div>
+  )
+})
+```
+
+### Nested observer components
+
+```tsx
+const TodoItem = observer(({ id }: { id: string }) => {
+  // Only re-renders when this specific todo changes
+  const todo = state$.todos[id].get()
+  
+  return (
+    <div>
+      <input
+        type="checkbox"
+        checked={todo.completed}
+        onChange={(e) => state$.todos[id].completed.set(e.target.checked)}
+      />
+      <span>{todo.text}</span>
+    </div>
+  )
+})
+
+const TodoList = observer(() => {
+  // Only re-renders when the todo list length/order changes
+  const todoIds = state$.todos.get().map(t => t.id)
+  
+  return (
+    <div>
+      {todoIds.map(id => <TodoItem key={id} id={id} />)}
+    </div>
+  )
+})
+```
+
+## Behavior
+
+### Automatic tracking
+
+`observer` wraps the entire component render in a tracking context. Any observable accessed with `.get()` during render is automatically tracked:
+
+```tsx
+const Component = observer(() => {
+  // ✅ Tracked - will cause re-render
+  const value = state$.value.get()
+  
+  // ❌ Not tracked - callback runs after render
+  const handleClick = () => {
+    const other = state$.other.get()
+  }
+  
+  return <div>{value}</div>
+})
+```
+
+### Fine-grained reactivity
+
+Only the observables actually accessed during render are tracked:
+
+```tsx
+const Component = observer(() => {
+  const user = state$.user.get() // Tracks state$.user
+  
+  // Only tracks state$.user.name, not other user properties
+  return <div>{user.name}</div>
+})
+```
+
+### Memoization
+
+Observer components are automatically wrapped with `React.memo`, preventing unnecessary re-renders from parent components:
+
+```tsx
+const Child = observer(({ id }: { id: string }) => {
+  const item = state$.items[id].get()
+  return <div>{item.name}</div>
+})
+
+// Child only re-renders when state$.items[id] changes,
+// NOT when Parent re-renders
+function Parent() {
+  return <Child id="123" />
+}
+```
+
+### Optimization with useSelector
+
+When `observer` detects a `useSelector` call with a plain observable (not a function), it optimizes away the extra subscription:
+
+```tsx
+const Component = observer(() => {
+  // Optimized - no extra subscription created
+  const count = useSelector(state$.count)
+  
+  return <div>{count}</div>
+})
+```
+
+## Performance considerations
+
+### Component granularity
+
+Break large components into smaller observer components for optimal re-rendering:
+
+```tsx
+// ❌ Less optimal - entire component re-renders for any state change
+const Dashboard = observer(() => {
+  return (
+    <div>
+      <div>{state$.user.name.get()}</div>
+      <div>{state$.count.get()}</div>
+      <div>{state$.messages.get().length} messages</div>
+    </div>
+  )
+})
+
+// ✅ Better - each section only re-renders when its data changes
+const UserSection = observer(() => <div>{state$.user.name.get()}</div>)
+const CountSection = observer(() => <div>{state$.count.get()}</div>)
+const MessageSection = observer(() => <div>{state$.messages.get().length} messages</div>)
+
+function Dashboard() {
+  return (
+    <div>
+      <UserSection />
+      <CountSection />
+      <MessageSection />
+    </div>
+  )
+}
+```
+
+### Avoid object/array creation
+
+Creating new objects/arrays on every render bypasses React.memo optimization:
+
+```tsx
+// ❌ Child re-renders even when data doesn't change
+const Parent = observer(() => {
+  return <Child data={{ value: state$.value.get() }} />
+})
+
+// ✅ Pass primitives or observables directly
+const Parent = observer(() => {
+  return <Child value={state$.value.get()} />
+})
+
+// ✅ Or pass the observable itself
+const Parent = observer(() => {
+  return <Child value$={state$.value} />
+})
+```
+
+## When to use observer vs useSelector
+
+### Use observer when:
+- Component accesses multiple observables
+- Observable access is spread throughout the component
+- You want automatic tracking without manual subscriptions
+- You want the simplest, most concise code
+
+### Use useSelector when:
+- Component only needs one or two observable values
+- The component is already complex and you want explicit control
+- You need fine-grained control over what triggers re-renders
+
+```tsx
+// observer - simple and automatic
+const Component = observer(() => {
+  return <div>{state$.a.get()} {state$.b.get()} {state$.c.get()}</div>
+})
+
+// useSelector - more explicit
+function Component() {
+  const a = useSelector(state$.a)
+  const b = useSelector(state$.b)
+  const c = useSelector(state$.c)
+  return <div>{a} {b} {c}</div>
+}
+```
+
+## Type Parameters
+
+<ParamField path="P" type="type">
+  The props type of the component. Must extend `FC<any>` (functional component).
+</ParamField>
+
+## Notes
+
+- Observer components are automatically memoized
+- Works with `forwardRef` and `memo` - automatically unwraps and re-wraps
+- Only tracks observables accessed during render, not in callbacks
+- In development mode, provides helpful warnings about render loops
+- Marked as already proxied to prevent double-wrapping in Fast Refresh
+
+## Related
+
+- [reactive](/api/react/reactive) - Make components accept observable props
+- [useSelector](/api/react/use-selector) - Manual observable subscription
+- [useObserve](/api/react/use-observe) - Side effects on observable changes

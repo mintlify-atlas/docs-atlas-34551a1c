@@ -1,0 +1,377 @@
+---
+title: 'useTraceUpdates'
+description: 'Debug why a component re-rendered'
+---
+
+## Overview
+
+The `useTraceUpdates` hook is a development tool that logs whenever a tracked observable changes, showing you exactly why a component re-rendered. It displays the observable path, old value, and new value.
+
+<Note>
+This hook only works in development and test environments (`NODE_ENV === 'development'` or `'test'`).
+</Note>
+
+## Signature
+
+```typescript
+function useTraceUpdates(name?: string): void
+```
+
+<ParamField path="name" type="string">
+  Optional name to identify the component in log output
+</ParamField>
+
+## Usage
+
+Call `useTraceUpdates` inside an `observer` component or `useSelector` hook to see why re-renders happen:
+
+```typescript
+import { observer, useTraceUpdates } from '@legendapp/state/react';
+import { observable } from '@legendapp/state';
+
+const state$ = observable({
+    user: { name: 'Alice' },
+    count: 0
+});
+
+const UserProfile = observer(function UserProfile() {
+    useTraceUpdates('UserProfile');
+    
+    const name = state$.user.name.get();
+    const count = state$.count.get();
+    
+    return (
+        <div>
+            <h1>{name}</h1>
+            <p>Count: {count}</p>
+        </div>
+    );
+});
+
+// When state$.user.name changes:
+// Console output:
+// [legend-state] Rendering UserProfile because "user.name" changed:
+// from: "Alice"
+// to: "Bob"
+
+// When state$.count changes:
+// [legend-state] Rendering UserProfile because "count" changed:
+// from: 0
+// to: 1
+```
+
+## Output Format
+
+When a tracked observable changes, the hook logs:
+
+- Component name (if provided)
+- Observable path that changed
+- Previous value (serialized as JSON)
+- New value (serialized as JSON)
+
+```
+[legend-state] Rendering ComponentName because "path.to.observable" changed:
+from: {"old":"value"}
+to: {"new":"value"}
+```
+
+## Multiple Changes
+
+If multiple observables change at once (e.g., in a batch), each change is logged separately:
+
+```typescript
+import { observer, useTraceUpdates } from '@legendapp/state/react';
+import { observable, beginBatch, endBatch } from '@legendapp/state';
+
+const form$ = observable({
+    firstName: 'John',
+    lastName: 'Doe'
+});
+
+const Form = observer(() => {
+    useTraceUpdates('Form');
+    
+    const firstName = form$.firstName.get();
+    const lastName = form$.lastName.get();
+    
+    return <div>{firstName} {lastName}</div>;
+});
+
+// Batch multiple changes
+beginBatch();
+form$.firstName.set('Jane');
+form$.lastName.set('Smith');
+endBatch();
+
+// Console output:
+// [legend-state] Rendering Form because "firstName" changed:
+// from: "John"
+// to: "Jane"
+// [legend-state] Rendering Form because "lastName" changed:
+// from: "Doe"
+// to: "Smith"
+```
+
+## Advanced Usage
+
+### Debugging Unexpected Re-renders
+
+```typescript
+import { observer, useTraceUpdates } from '@legendapp/state/react';
+import { observable } from '@legendapp/state';
+
+const store$ = observable({
+    products: [/* ... */],
+    filters: { search: '' },
+    ui: { loading: false }
+});
+
+const ProductList = observer(() => {
+    useTraceUpdates('ProductList');
+    
+    const products = store$.products.get();
+    const loading = store$.ui.loading.get();
+    
+    // If component re-renders unexpectedly,
+    // the console will show exactly which observable changed
+    
+    return loading ? <Spinner /> : <List items={products} />;
+});
+
+// When store$.ui.loading changes:
+// [legend-state] Rendering ProductList because "ui.loading" changed:
+// from: false
+// to: true
+```
+
+### Tracking Form Changes
+
+```typescript
+import { observer, useTraceUpdates } from '@legendapp/state/react';
+import { observable } from '@legendapp/state';
+
+const form$ = observable({
+    email: '',
+    password: '',
+    rememberMe: false
+});
+
+const LoginForm = observer(() => {
+    useTraceUpdates('LoginForm');
+    
+    const email = form$.email.get();
+    const password = form$.password.get();
+    const rememberMe = form$.rememberMe.get();
+    
+    // Each keystroke or checkbox change will be logged
+    
+    return (
+        <form>
+            <input value={email} onChange={e => form$.email.set(e.target.value)} />
+            <input type="password" value={password} onChange={e => form$.password.set(e.target.value)} />
+            <input type="checkbox" checked={rememberMe} onChange={e => form$.rememberMe.set(e.target.checked)} />
+        </form>
+    );
+});
+```
+
+### With useSelector
+
+```typescript
+import { useSelector, useTraceUpdates } from '@legendapp/state/react';
+import { observable } from '@legendapp/state';
+
+const state$ = observable({ items: [] });
+
+function ItemCount() {
+    const count = useSelector(() => {
+        useTraceUpdates('ItemCount selector');
+        return state$.items.length;
+    });
+    
+    return <div>{count} items</div>;
+}
+
+// When items array changes:
+// [legend-state] Rendering ItemCount selector because "items" changed:
+// from: []
+// to: [{"id":1}]
+```
+
+## Comparison with useTraceListeners
+
+Both hooks help with debugging, but serve different purposes:
+
+### useTraceUpdates
+
+- Shows **why** a component re-rendered
+- Logs on every state change
+- Shows old and new values
+- Use to debug specific re-render issues
+
+### useTraceListeners
+
+- Shows **what** observables are being tracked
+- Logs once when component renders
+- Lists all tracked observable paths
+- Use to understand component dependencies
+
+```typescript
+import { observer, useTraceListeners, useTraceUpdates } from '@legendapp/state/react';
+
+const Component = observer(() => {
+    useTraceListeners('Component'); // What am I tracking?
+    useTraceUpdates('Component');   // Why did I re-render?
+    
+    // ...
+});
+```
+
+## Real-World Examples
+
+### Debugging Performance
+
+```typescript
+import { observer, useTraceUpdates } from '@legendapp/state/react';
+import { observable } from '@legendapp/state';
+
+const app$ = observable({
+    posts: [], // Large array
+    currentPost: { id: 1, title: 'Hello' }
+});
+
+const PostViewer = observer(() => {
+    useTraceUpdates('PostViewer');
+    
+    const currentPost = app$.currentPost.get();
+    
+    // If this re-renders when posts array changes,
+    // you'll see it in the console and can fix it
+    
+    return <article>{currentPost.title}</article>;
+});
+
+// Bad: tracking entire posts array
+const PostList = observer(() => {
+    useTraceUpdates('PostList');
+    
+    const posts = app$.posts.get(); // This will log every time posts changes
+    
+    return <ul>{posts.map(p => <li key={p.id}>{p.title}</li>)}</ul>;
+});
+```
+
+### Form Validation Debugging
+
+```typescript
+import { observer, useTraceUpdates } from '@legendapp/state/react';
+import { observable, computed } from '@legendapp/state';
+
+const form$ = observable({
+    email: '',
+    password: ''
+});
+
+const isValid$ = computed(() => {
+    return form$.email.get().includes('@') && form$.password.get().length >= 8;
+});
+
+const SubmitButton = observer(() => {
+    useTraceUpdates('SubmitButton');
+    
+    const isValid = isValid$.get();
+    
+    // See exactly when and why validation state changes
+    
+    return <button disabled={!isValid}>Submit</button>;
+});
+
+// Console shows:
+// [legend-state] Rendering SubmitButton because "computed" changed:
+// from: false
+// to: true
+```
+
+### Animation State Tracking
+
+```typescript
+import { observer, useTraceUpdates } from '@legendapp/state/react';
+import { observable } from '@legendapp/state';
+
+const animation$ = observable({
+    isPlaying: false,
+    progress: 0,
+    duration: 1000
+});
+
+const AnimationController = observer(() => {
+    useTraceUpdates('AnimationController');
+    
+    const isPlaying = animation$.isPlaying.get();
+    const progress = animation$.progress.get();
+    
+    // Track every progress update during animation
+    
+    return (
+        <div>
+            <div style={{ width: `${progress}%` }} />
+            <button onClick={() => animation$.isPlaying.set(!isPlaying)}>
+                {isPlaying ? 'Pause' : 'Play'}
+            </button>
+        </div>
+    );
+});
+```
+
+## TypeScript
+
+The hook has full TypeScript support:
+
+```typescript
+import { useTraceUpdates } from '@legendapp/state/react';
+
+function MyComponent() {
+    useTraceUpdates(); // No name
+    useTraceUpdates('MyComponent'); // With name
+    // useTraceUpdates(123); // ❌ Error: must be string
+    
+    // ...
+}
+```
+
+## Best Practices
+
+<Tip>
+**Use during development:** Enable tracing when debugging re-render issues, but remove for production.
+</Tip>
+
+<Tip>
+**Name your components:** Always provide a name parameter to easily identify which component is re-rendering.
+</Tip>
+
+<Note>
+**Combine with useTraceListeners:** Use both hooks together for complete debugging:
+- `useTraceListeners` shows what's being tracked
+- `useTraceUpdates` shows what changed
+</Note>
+
+<Warning>
+**Be cautious with large values:** The hook serializes values to JSON, which can be slow for very large objects or arrays.
+</Warning>
+
+## Production Builds
+
+The hook is automatically disabled in production:
+
+```typescript
+// This does nothing in production
+useTraceUpdates('Component');
+```
+
+No need to remove the calls or use conditional logic - they're no-ops outside of development/test environments.
+
+## Related
+
+- [useTraceListeners](/api/trace/use-trace-listeners) - See what observables are tracked
+- [observer](/api/react/observer) - Create reactive components
+- [useSelector](/api/react/use-selector) - Track observables in hooks

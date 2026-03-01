@@ -1,0 +1,493 @@
+---
+title: TypeScript Usage
+description: Learn how to use Legend-State with TypeScript for full type safety
+---
+
+Legend-State is written in TypeScript and provides **very strong typing** for observables. This guide covers TypeScript usage patterns and how to type your observables correctly.
+
+## Type Inference
+
+Legend-State automatically infers types from the initial value:
+
+```typescript
+import { observable } from '@legendapp/state';
+
+// Type is inferred as Observable<{ count: number; name: string }>
+const state$ = observable({
+  count: 0,
+  name: 'App',
+});
+
+// TypeScript knows count is a number
+const count = state$.count.get(); // number
+
+// TypeScript error: Type 'string' is not assignable to type 'number'
+state$.count.set('invalid'); // ❌ Error
+```
+
+## Explicit Type Annotations
+
+You can explicitly specify types using generics:
+
+```typescript
+import { observable, Observable } from '@legendapp/state';
+
+interface User {
+  id: number;
+  name: string;
+  email: string;
+  role: 'admin' | 'user';
+}
+
+// Explicitly typed observable
+const user$ = observable<User>({
+  id: 1,
+  name: 'John Doe',
+  email: 'john@example.com',
+  role: 'user',
+});
+
+// Observable type can be extracted
+type UserObservable = Observable<User>;
+```
+
+## Observable Types
+
+Legend-State provides several key types:
+
+### Observable&lt;T&gt;
+
+The main observable type that wraps your data:
+
+```typescript
+import { Observable } from '@legendapp/state';
+
+type State = {
+  count: number;
+  items: string[];
+};
+
+// Observable<State> has these properties:
+// - count: Observable<number>
+// - items: Observable<string[]>
+const state$: Observable<State> = observable({
+  count: 0,
+  items: [],
+});
+```
+
+### ObservablePrimitive&lt;T&gt;
+
+For primitive values:
+
+```typescript
+import { ObservablePrimitive } from '@legendapp/state';
+
+// ObservablePrimitive has get(), set(), peek(), onChange() methods
+const count$: ObservablePrimitive<number> = observable(0);
+```
+
+### ObservableObject&lt;T&gt;
+
+For object values:
+
+```typescript
+import { ObservableObject } from '@legendapp/state';
+
+interface Settings {
+  theme: 'light' | 'dark';
+  fontSize: number;
+}
+
+// ObservableObject has assign() in addition to standard methods
+const settings$: ObservableObject<Settings> = observable({
+  theme: 'light',
+  fontSize: 14,
+});
+
+settings$.assign({ theme: 'dark' }); // ✓ OK
+```
+
+### ObservableBoolean
+
+Boolean observables have a special `toggle()` method:
+
+```typescript
+import { ObservableBoolean } from '@legendapp/state';
+
+const isOpen$: ObservableBoolean = observable(false);
+
+isOpen$.toggle(); // Flips between true and false
+```
+
+## Array Types
+
+Arrays have special typing for array methods:
+
+```typescript
+import { observable } from '@legendapp/state';
+
+const items$ = observable([1, 2, 3]);
+
+// Array methods return observables
+const found$ = items$.find(item => item > 1); // Observable<number | undefined>
+const filtered$ = items$.filter(item => item > 1); // Observable<number>[] 
+const mapped$ = items$.map(item => item * 2); // Observable<number>[]
+```
+
+## Map and Set Types
+
+Legend-State supports Map and Set with proper typing:
+
+```typescript
+import { Observable, ObservableMap } from '@legendapp/state';
+
+// Map with string keys and number values
+const map$ = observable(new Map<string, number>());
+map$.set('count', 42);
+const count$ = map$.get('count'); // Observable<number>
+
+// Set with string values
+const set$ = observable(new Set<string>());
+set$.add('item1');
+const size = set$.size; // number
+```
+
+## Nullable Types
+
+Observables handle nullable types correctly:
+
+```typescript
+import { observable, Observable } from '@legendapp/state';
+
+// Type: Observable<string | undefined>
+const name$ = observable<string | undefined>(undefined);
+
+name$.set('John'); // ✓ OK
+name$.set(undefined); // ✓ OK
+name$.set(null); // ❌ Error: null not in type
+
+// Type: Observable<User | null>
+const user$ = observable<User | null>(null);
+```
+
+## Function Types and Computeds
+
+Computed observables are just functions:
+
+```typescript
+import { observable } from '@legendapp/state';
+
+const state$ = observable({
+  firstName: 'John',
+  lastName: 'Doe',
+});
+
+// Computed observable - type is inferred as Observable<string>
+const fullName$ = observable(() => 
+  `${state$.firstName.get()} ${state$.lastName.get()}`
+);
+
+const name: string = fullName$.get(); // ✓ OK
+```
+
+## Typing with RecursiveValueOrFunction
+
+For complex initialization, use `RecursiveValueOrFunction`:
+
+```typescript
+import { observable, RecursiveValueOrFunction } from '@legendapp/state';
+
+interface AppState {
+  user: User | null;
+  settings: Settings;
+}
+
+// Accepts value, function, promise, or observable
+function createState(init: RecursiveValueOrFunction<AppState>) {
+  return observable(init);
+}
+
+// All of these work:
+createState({ user: null, settings: defaultSettings });
+createState(() => ({ user: null, settings: defaultSettings }));
+createState(Promise.resolve({ user: null, settings: defaultSettings }));
+```
+
+## RemoveObservables Type
+
+Extract the underlying type from an observable:
+
+```typescript
+import { observable, RemoveObservables } from '@legendapp/state';
+
+const state$ = observable({
+  count: 0,
+  user: { name: 'John', age: 30 },
+});
+
+// Extract the plain type
+type State = RemoveObservables<typeof state$>;
+// Result: { count: number; user: { name: string; age: number } }
+
+const plainData: State = state$.get();
+```
+
+## React Hook Types
+
+### useObservable
+
+```typescript
+import { useObservable } from '@legendapp/state/react';
+import { Observable } from '@legendapp/state';
+
+function Component() {
+  // Type inferred from initial value
+  const count$ = useObservable(0); // Observable<number>
+  
+  // Explicit type
+  const user$ = useObservable<User | null>(null);
+  
+  // With function initializer
+  const computed$ = useObservable(() => {
+    return expensiveCalculation();
+  });
+  
+  return null;
+}
+```
+
+### observer
+
+```typescript
+import { observer } from '@legendapp/state/react';
+import { FC } from 'react';
+
+interface Props {
+  title: string;
+  count: number;
+}
+
+// observer preserves component props type
+const Component: FC<Props> = observer(function Component({ title, count }) {
+  return <div>{title}: {count}</div>;
+});
+```
+
+### Reactive Components
+
+```typescript
+import { Reactive, Selector } from '@legendapp/state/react';
+import { observable } from '@legendapp/state';
+
+const state$ = observable({ text: 'Hello' });
+
+function Component() {
+  return (
+    // $text accepts Observable<string> or Selector<string>
+    <Reactive.div $text={state$.text} />
+  );
+}
+```
+
+## Advanced Type Patterns
+
+### Conditional Types
+
+```typescript
+import { observable, Observable } from '@legendapp/state';
+
+type StateFor<T> = T extends 'user' ? UserState : T extends 'admin' ? AdminState : never;
+
+function createStateFor<T extends 'user' | 'admin'>(type: T): Observable<StateFor<T>> {
+  if (type === 'user') {
+    return observable({} as StateFor<T>);
+  }
+  return observable({} as StateFor<T>);
+}
+```
+
+### Generic Components
+
+```typescript
+import { observable, Observable } from '@legendapp/state';
+import { FC } from 'react';
+import { observer } from '@legendapp/state/react';
+
+interface ListProps<T> {
+  items$: Observable<T[]>;
+  renderItem: (item: T) => React.ReactNode;
+}
+
+const List = observer(function List<T>({ items$, renderItem }: ListProps<T>) {
+  const items = items$.get();
+  return (
+    <div>
+      {items.map((item, i) => (
+        <div key={i}>{renderItem(item)}</div>
+      ))}
+    </div>
+  );
+}) as <T>(props: ListProps<T>) => React.ReactElement;
+```
+
+## Strict Mode
+
+Legend-State is built in TypeScript strict mode and fully supports it:
+
+```typescript
+// tsconfig.json
+{
+  "compilerOptions": {
+    "strict": true,
+    "strictNullChecks": true,
+    "noImplicitAny": true
+  }
+}
+```
+
+## Type Utilities
+
+### Selector Type
+
+```typescript
+import { Selector } from '@legendapp/state';
+import { observable } from '@legendapp/state';
+
+const state$ = observable({ count: 0 });
+
+// Selector<T> is a function that returns T
+const selector: Selector<number> = () => state$.count.get();
+```
+
+### ObservableParam Type
+
+For function parameters that accept observables:
+
+```typescript
+import { ObservableParam } from '@legendapp/state';
+
+function logValue(value: ObservableParam<string>) {
+  // Works with both Observable and plain values
+  console.log(value.get());
+}
+```
+
+## Common Type Errors
+
+<Accordion title="Error: Type 'Observable<T>' is not assignable to type 'T'">
+  You're likely forgetting to call `.get()` on an observable:
+  
+  ```typescript
+  const count$ = observable(0);
+  
+  // ❌ Error
+  const value: number = count$;
+  
+  // ✓ OK
+  const value: number = count$.get();
+  ```
+</Accordion>
+
+<Accordion title="Error: Property does not exist on type 'Observable'">
+  Make sure you're accessing observable properties correctly:
+  
+  ```typescript
+  const state$ = observable({ count: 0 });
+  
+  // ❌ Error
+  state$.get().count.set(1);
+  
+  // ✓ OK
+  state$.count.set(1);
+  ```
+</Accordion>
+
+<Accordion title="Error: Argument of type 'undefined' is not assignable">
+  You may need to allow undefined in your type:
+  
+  ```typescript
+  // ❌ This doesn't allow undefined
+  const user$ = observable<User>(null as any);
+  
+  // ✓ OK
+  const user$ = observable<User | undefined>(undefined);
+  ```
+</Accordion>
+
+## Advanced: Enable $ Properties
+
+You can enable shorthand properties for get/set:
+
+```typescript
+import { enable$GetSet } from '@legendapp/state/config/enable$GetSet';
+
+enable$GetSet();
+
+const count$ = observable(0);
+
+// Now you can use $ as shorthand
+const value = count$.$; // Same as count$.get()
+count$.$ = 5; // Same as count$.set(5)
+```
+
+Or enable `_` for peek/assign:
+
+```typescript
+import { enable_PeekAssign } from '@legendapp/state/config/enable_PeekAssign';
+
+enable_PeekAssign();
+
+const count$ = observable(0);
+
+// Now you can use _ for untracked access
+const value = count$._; // Same as count$.peek()
+count$._ = 5; // Same as setNodeValue (doesn't notify)
+```
+
+<Warning>
+  These are experimental features and may change. Use with caution in production.
+</Warning>
+
+## Type-Safe Persistence
+
+When using persistence, ensure your types match:
+
+```typescript
+import { observable } from '@legendapp/state';
+import { syncedKeel } from '@legendapp/state/sync-plugins/keel';
+
+interface User {
+  id: string;
+  name: string;
+  email: string;
+}
+
+const users$ = observable(
+  syncedKeel<User[]>({
+    list: queries.getUsers,
+    create: mutations.createUser,
+    update: mutations.updateUser,
+    delete: mutations.deleteUser,
+    persist: { name: 'users', retrySync: true },
+  })
+);
+```
+
+## Summary
+
+<Info>
+  **Key Points**:
+  - Legend-State has excellent TypeScript support with full type inference
+  - Use `Observable<T>` for the main type
+  - Arrays, Maps, and Sets have specialized types
+  - Use `RemoveObservables<T>` to extract plain types
+  - React hooks and components preserve type safety
+  - Strict mode is fully supported
+</Info>
+
+## Next Steps
+
+- Learn about [Performance optimization](/guides/performance)
+- Explore [React Native usage](/guides/react-native)
+- Read the [Migration Guide](/guides/migration-v3)

@@ -1,0 +1,370 @@
+---
+title: 'undoRedo'
+description: 'Add undo/redo functionality to an observable'
+---
+
+## Overview
+
+The `undoRedo` helper provides a complete undo/redo system for any observable. It automatically tracks changes and allows you to move backward and forward through the history.
+
+## Signature
+
+```typescript
+function undoRedo<T>(
+    obs$: ObservablePrimitive<T>, 
+    options?: UndoRedoOptions
+): {
+    undo: () => void;
+    redo: () => void;
+    undos$: ObservablePrimitive<number>;
+    redos$: ObservablePrimitive<number>;
+    getHistory: () => T[];
+}
+```
+
+<ParamField path="obs$" type="ObservablePrimitive<T>" required>
+  The observable to add undo/redo functionality to
+</ParamField>
+
+<ParamField path="options" type="UndoRedoOptions">
+  Configuration options
+  
+  <ParamField path="limit" type="number">
+    Maximum number of history states to keep. If not specified, history grows indefinitely.
+  </ParamField>
+</ParamField>
+
+**Returns:** An object with undo/redo controls:
+
+<ResponseField name="undo" type="() => void">
+  Function to undo the last change
+</ResponseField>
+
+<ResponseField name="redo" type="() => void">
+  Function to redo the last undone change
+</ResponseField>
+
+<ResponseField name="undos$" type="ObservablePrimitive<number>">
+  Observable containing the number of available undos
+</ResponseField>
+
+<ResponseField name="redos$" type="ObservablePrimitive<number>">
+  Observable containing the number of available redos
+</ResponseField>
+
+<ResponseField name="getHistory" type="() => T[]">
+  Function to get the complete history array
+</ResponseField>
+
+## Basic Usage
+
+```typescript
+import { observable } from '@legendapp/state';
+import { undoRedo } from '@legendapp/state/helpers/undoRedo';
+
+const text$ = observable({ content: 'Hello' });
+const { undo, redo, undos$, redos$ } = undoRedo(text$);
+
+// Make a change
+text$.content.set('Hello World');
+
+// Undo the change
+undo();
+console.log(text$.get()); // { content: 'Hello' }
+
+// Redo the change
+redo();
+console.log(text$.get()); // { content: 'Hello World' }
+```
+
+## Tracking Available Undos/Redos
+
+Use the `undos$` and `redos$` observables to enable/disable UI buttons:
+
+```typescript
+import { observable, observer } from '@legendapp/state';
+import { undoRedo } from '@legendapp/state/helpers/undoRedo';
+
+const document$ = observable({ title: '', content: '' });
+const { undo, redo, undos$, redos$ } = undoRedo(document$);
+
+const Editor = observer(() => {
+    const canUndo = undos$.get() > 0;
+    const canRedo = redos$.get() > 0;
+    
+    return (
+        <div>
+            <button onClick={undo} disabled={!canUndo}>
+                Undo ({undos$.get()})
+            </button>
+            <button onClick={redo} disabled={!canRedo}>
+                Redo ({redos$.get()})
+            </button>
+        </div>
+    );
+});
+```
+
+## Multiple Changes
+
+Each change creates a new history entry:
+
+```typescript
+import { observable } from '@legendapp/state';
+import { undoRedo } from '@legendapp/state/helpers/undoRedo';
+
+const state$ = observable({ x: 0, y: 0 });
+const { undo, undos$, redos$ } = undoRedo(state$);
+
+state$.x.set(10); // Creates history entry #1
+state$.y.set(20); // Creates history entry #2
+
+console.log(undos$.get()); // 2
+
+undo(); // Back to { x: 10, y: 0 }
+undo(); // Back to { x: 0, y: 0 }
+
+console.log(undos$.get()); // 0
+console.log(redos$.get()); // 2
+```
+
+## Batching Changes
+
+Use batching to group multiple changes into a single undo/redo operation:
+
+```typescript
+import { observable, beginBatch, endBatch } from '@legendapp/state';
+import { undoRedo } from '@legendapp/state/helpers/undoRedo';
+
+const form$ = observable({ 
+    firstName: 'John', 
+    lastName: 'Doe',
+    email: 'john@example.com'
+});
+
+const { undo, undos$ } = undoRedo(form$);
+
+// Batch multiple changes together
+beginBatch();
+form$.firstName.set('Jane');
+form$.email.set('jane@example.com');
+endBatch();
+
+console.log(undos$.get()); // 1 (not 2!)
+
+// Single undo reverts both changes
+undo();
+console.log(form$.get());
+// { firstName: 'John', lastName: 'Doe', email: 'john@example.com' }
+```
+
+## History Limit
+
+Limit the number of history entries to prevent unbounded memory growth:
+
+```typescript
+import { observable } from '@legendapp/state';
+import { undoRedo } from '@legendapp/state/helpers/undoRedo';
+
+const canvas$ = observable({ strokes: [] });
+
+// Keep only last 50 undo states
+const { undo, redo, getHistory } = undoRedo(canvas$, { limit: 50 });
+
+// Make 100 changes
+for (let i = 0; i < 100; i++) {
+    canvas$.strokes.push({ x: i, y: i });
+}
+
+// History is limited to 50 entries
+console.log(getHistory().length); // 51 (50 undos + current state)
+```
+
+## Undo After Making Changes
+
+Making a new change after undoing will clear the redo history:
+
+```typescript
+import { observable } from '@legendapp/state';
+import { undoRedo } from '@legendapp/state/helpers/undoRedo';
+
+const text$ = observable({ value: 'A' });
+const { undo, redo, undos$, redos$ } = undoRedo(text$);
+
+text$.value.set('B');
+text$.value.set('C');
+
+undo(); // Back to 'B'
+undo(); // Back to 'A'
+
+console.log(undos$.get()); // 0
+console.log(redos$.get()); // 2
+
+// Make a new change
+text$.value.set('D');
+
+// Redo history is cleared!
+console.log(undos$.get()); // 1
+console.log(redos$.get()); // 0
+```
+
+## Remote Changes
+
+Changes from persistence or sync are automatically excluded from history to avoid duplicate tracking:
+
+```typescript
+import { observable } from '@legendapp/state';
+import { undoRedo } from '@legendapp/state/helpers/undoRedo';
+import { persistObservable } from '@legendapp/state/persist';
+
+const doc$ = observable({ content: '' });
+const { undo, undos$ } = undoRedo(doc$);
+
+// Persist the document
+persistObservable(doc$, {
+    local: 'document'
+});
+
+// Local changes are tracked
+doc$.content.set('Hello'); // Creates history entry
+
+console.log(undos$.get()); // 1
+
+// Changes loaded from persistence don't create history
+// (Reload the page - undos$ will still be 0 on startup)
+```
+
+## Accessing Full History
+
+Use `getHistory()` to access the complete history array:
+
+```typescript
+import { observable } from '@legendapp/state';
+import { undoRedo } from '@legendapp/state/helpers/undoRedo';
+
+const counter$ = observable({ count: 0 });
+const { undo, getHistory } = undoRedo(counter$);
+
+counter$.count.set(1);
+counter$.count.set(2);
+counter$.count.set(3);
+
+// Get full history
+const history = getHistory();
+console.log(history);
+// [
+//   { count: 0 },
+//   { count: 1 },
+//   { count: 2 },
+//   { count: 3 }
+// ]
+
+undo();
+undo();
+
+// History array includes future states too
+console.log(getHistory());
+// Same as above - full history is preserved until new change
+```
+
+## Use Cases
+
+### Text Editor
+
+```typescript
+import { observable, observer } from '@legendapp/state';
+import { undoRedo } from '@legendapp/state/helpers/undoRedo';
+
+const editor$ = observable({ text: '' });
+const { undo, redo, undos$, redos$ } = undoRedo(editor$);
+
+const TextEditor = observer(() => (
+    <div>
+        <div>
+            <button onClick={undo} disabled={undos$.get() === 0}>
+                ↶ Undo
+            </button>
+            <button onClick={redo} disabled={redos$.get() === 0}>
+                ↷ Redo
+            </button>
+        </div>
+        <textarea 
+            value={editor$.text.get()}
+            onChange={(e) => editor$.text.set(e.target.value)}
+        />
+    </div>
+));
+```
+
+### Form with Undo
+
+```typescript
+import { observable, observer } from '@legendapp/state';
+import { undoRedo } from '@legendapp/state/helpers/undoRedo';
+
+const form$ = observable({
+    name: '',
+    email: '',
+    bio: ''
+});
+
+const { undo, redo, undos$, redos$ } = undoRedo(form$, { limit: 20 });
+
+const Form = observer(() => {
+    return (
+        <form>
+            <input 
+                value={form$.name.get()}
+                onChange={(e) => form$.name.set(e.target.value)}
+            />
+            <input 
+                value={form$.email.get()}
+                onChange={(e) => form$.email.set(e.target.value)}
+            />
+            <textarea 
+                value={form$.bio.get()}
+                onChange={(e) => form$.bio.set(e.target.value)}
+            />
+            
+            <div>
+                <button type="button" onClick={undo}>
+                    Undo ({undos$.get()})
+                </button>
+                <button type="button" onClick={redo}>
+                    Redo ({redos$.get()})
+                </button>
+            </div>
+        </form>
+    );
+});
+```
+
+### Drawing Canvas
+
+```typescript
+import { observable, beginBatch, endBatch } from '@legendapp/state';
+import { undoRedo } from '@legendapp/state/helpers/undoRedo';
+
+const canvas$ = observable<{ strokes: Point[][] }>({
+    strokes: []
+});
+
+const { undo, redo, undos$, redos$ } = undoRedo(canvas$, { limit: 100 });
+
+function drawStroke(points: Point[]) {
+    // Batch all points in a stroke as one undo operation
+    beginBatch();
+    canvas$.strokes.push(points);
+    endBatch();
+}
+
+function clearCanvas() {
+    canvas$.strokes.set([]);
+}
+```
+
+## Related
+
+- [trackHistory](/api/helpers/track-history) - Low-level history tracking
+- [beginBatch/endBatch](/api/batching) - Batch multiple changes
+- [onChange](/api/observable/on-change) - Listen to observable changes

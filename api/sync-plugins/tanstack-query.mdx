@@ -1,0 +1,466 @@
+---
+title: TanStack Query Plugin
+description: Integrate Legend-State with TanStack Query for powerful caching
+---
+
+The TanStack Query plugin integrates Legend-State observables with TanStack Query (formerly React Query), combining reactive state management with TanStack Query's powerful caching, invalidation, and background refetching.
+
+## Installation
+
+```bash
+npm install @legendapp/state @tanstack/query-core
+
+# For React
+npm install @tanstack/react-query
+```
+
+## Setup
+
+```ts
+import { QueryClient } from '@tanstack/query-core'
+import { syncedQuery } from '@legendapp/state/sync-plugins/tanstack-query'
+
+const queryClient = new QueryClient()
+```
+
+## Usage
+
+```ts
+import { syncedQuery } from '@legendapp/state/sync-plugins/tanstack-query'
+
+const user$ = syncedQuery({
+  queryClient,
+  query: {
+    queryKey: ['user'],
+    queryFn: () => fetch('/api/user').then(r => r.json())
+  }
+})
+```
+
+## Parameters
+
+<ParamField path="queryClient" type="QueryClient" required>
+  TanStack Query client instance
+  
+  ```ts
+  import { QueryClient } from '@tanstack/query-core'
+  
+  const queryClient = new QueryClient()
+  ```
+</ParamField>
+
+<ParamField path="query" type="QueryObserverOptions" required>
+  TanStack Query configuration
+  
+  <Expandable title="query fields">
+    <ResponseField name="queryKey" type="QueryKey | (() => QueryKey)" required>
+      Query key for caching and invalidation
+      
+      ```ts
+      // Static key
+      queryKey: ['user']
+      
+      // Dynamic key (observable)
+      queryKey: () => ['user', userId$.get()]
+      ```
+    </ResponseField>
+    
+    <ResponseField name="queryFn" type="(context) => Promise<TData>" required>
+      Function to fetch data
+      
+      ```ts
+      queryFn: () => fetch('/api/user').then(r => r.json())
+      
+      queryFn: ({ queryKey }) => api.getUser(queryKey[1])
+      ```
+    </ResponseField>
+    
+    <ResponseField name="staleTime" type="number">
+      Time in ms before data is considered stale
+    </ResponseField>
+    
+    <ResponseField name="cacheTime" type="number">
+      Time in ms before unused data is garbage collected
+    </ResponseField>
+    
+    <ResponseField name="enabled" type="boolean">
+      Enable/disable query
+    </ResponseField>
+    
+    <ResponseField name="refetchOnWindowFocus" type="boolean">
+      Refetch when window regains focus
+    </ResponseField>
+    
+    <ResponseField name="refetchOnReconnect" type="boolean">
+      Refetch when network reconnects
+    </ResponseField>
+    
+    <ResponseField name="refetchInterval" type="number">
+      Interval in ms for automatic refetching
+    </ResponseField>
+    
+    See [TanStack Query docs](https://tanstack.com/query/latest/docs/react/reference/useQuery) for all options.
+  </Expandable>
+</ParamField>
+
+<ParamField path="mutation" type="MutationObserverOptions">
+  TanStack Mutation configuration for handling updates
+  
+  ```ts
+  mutation: {
+    mutationFn: (data) => fetch('/api/user', {
+      method: 'PUT',
+      body: JSON.stringify(data)
+    }).then(r => r.json())
+  }
+  ```
+</ParamField>
+
+<ParamField path="initial" type="TData">
+  Initial value before query loads
+</ParamField>
+
+<ParamField path="persist" type="PersistOptions">
+  Local persistence configuration
+</ParamField>
+
+## Return Value
+
+Returns a `Synced<TData>` observable that automatically updates when the query data changes.
+
+## Examples
+
+### Basic Usage
+
+```ts
+import { syncedQuery } from '@legendapp/state/sync-plugins/tanstack-query'
+import { QueryClient } from '@tanstack/query-core'
+
+const queryClient = new QueryClient()
+
+const user$ = syncedQuery({
+  queryClient,
+  query: {
+    queryKey: ['user'],
+    queryFn: () => fetch('/api/user').then(r => r.json())
+  }
+})
+
+// Access data
+const user = user$.get()
+console.log(user.name)
+```
+
+### With Mutations
+
+```ts
+const user$ = syncedQuery({
+  queryClient,
+  query: {
+    queryKey: ['user'],
+    queryFn: () => api.getUser()
+  },
+  mutation: {
+    mutationFn: (data) => api.updateUser(data)
+  }
+})
+
+// Update triggers mutation
+user$.name.set('John')
+user$.email.set('john@example.com')
+```
+
+### Dynamic Query Key
+
+```ts
+import { observable } from '@legendapp/state'
+
+const userId$ = observable('123')
+
+const user$ = syncedQuery({
+  queryClient,
+  query: {
+    queryKey: () => ['user', userId$.get()],  // Observable key
+    queryFn: ({ queryKey }) => api.getUser(queryKey[1])
+  }
+})
+
+// Switching user automatically refetches
+userId$.set('456')
+```
+
+### With React
+
+```tsx
+import { observer } from '@legendapp/state/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+
+const queryClient = new QueryClient()
+
+const posts$ = syncedQuery({
+  queryClient,
+  query: {
+    queryKey: ['posts'],
+    queryFn: () => api.getPosts(),
+    staleTime: 5 * 60 * 1000  // 5 minutes
+  }
+})
+
+const PostList = observer(function PostList() {
+  const posts = posts$.get()
+  
+  return (
+    <div>
+      {posts.map(post => (
+        <div key={post.id}>{post.title}</div>
+      ))}
+    </div>
+  )
+})
+
+function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <PostList />
+    </QueryClientProvider>
+  )
+}
+```
+
+### Automatic Refetching
+
+```ts
+const data$ = syncedQuery({
+  queryClient,
+  query: {
+    queryKey: ['data'],
+    queryFn: () => api.getData(),
+    refetchInterval: 30000,  // Refetch every 30s
+    refetchOnWindowFocus: true,  // Refetch on focus
+    refetchOnReconnect: true  // Refetch on reconnect
+  }
+})
+
+// Data automatically stays fresh
+```
+
+### With Initial Data
+
+```ts
+const user$ = syncedQuery({
+  queryClient,
+  query: {
+    queryKey: ['user'],
+    queryFn: () => api.getUser(),
+    initialData: { name: '', email: '' }  // Avoid loading state
+  }
+})
+
+// Has data immediately, then refetches
+```
+
+### Conditional Fetching
+
+```ts
+const isLoggedIn$ = observable(false)
+
+const userData$ = syncedQuery({
+  queryClient,
+  query: {
+    queryKey: ['userData'],
+    queryFn: () => api.getUserData(),
+    enabled: () => isLoggedIn$.get()  // Only fetch when logged in
+  }
+})
+```
+
+### Cache Management
+
+```ts
+const posts$ = syncedQuery({
+  queryClient,
+  query: {
+    queryKey: ['posts'],
+    queryFn: () => api.getPosts(),
+    staleTime: 5 * 60 * 1000,  // Fresh for 5 minutes
+    cacheTime: 10 * 60 * 1000  // Cached for 10 minutes
+  }
+})
+
+// Manually invalidate
+queryClient.invalidateQueries({ queryKey: ['posts'] })
+
+// Manually refetch
+await queryClient.refetchQueries({ queryKey: ['posts'] })
+```
+
+### Paginated Data
+
+```ts
+import { observable } from '@legendapp/state'
+
+const page$ = observable(1)
+
+const posts$ = syncedQuery({
+  queryClient,
+  query: {
+    queryKey: () => ['posts', page$.get()],
+    queryFn: ({ queryKey }) => api.getPosts({ page: queryKey[1] }),
+    keepPreviousData: true  // Keep old data while loading new
+  }
+})
+
+// Change page
+page$.set(2)  // Automatically fetches page 2
+```
+
+### Dependent Queries
+
+```ts
+const userId$ = observable<string | null>(null)
+
+const user$ = syncedQuery({
+  queryClient,
+  query: {
+    queryKey: () => ['user', userId$.get()],
+    queryFn: ({ queryKey }) => api.getUser(queryKey[1]),
+    enabled: () => !!userId$.get()
+  }
+})
+
+const posts$ = syncedQuery({
+  queryClient,
+  query: {
+    queryKey: () => ['posts', userId$.get()],
+    queryFn: ({ queryKey }) => api.getUserPosts(queryKey[1]),
+    enabled: () => !!user$.get()  // Wait for user to load
+  }
+})
+```
+
+### With Persistence
+
+```ts
+import { ObservablePersistLocalStorage } from '@legendapp/state/persist-plugins/local-storage'
+
+const user$ = syncedQuery({
+  queryClient,
+  query: {
+    queryKey: ['user'],
+    queryFn: () => api.getUser()
+  },
+  persist: {
+    name: 'user',
+    plugin: ObservablePersistLocalStorage
+  }
+})
+
+// 1. Loads from localStorage (instant)
+// 2. Fetches from server in background
+// 3. Uses TanStack Query caching
+```
+
+### Optimistic Updates
+
+```ts
+const todos$ = syncedQuery({
+  queryClient,
+  query: {
+    queryKey: ['todos'],
+    queryFn: () => api.getTodos()
+  },
+  mutation: {
+    mutationFn: (data) => api.updateTodos(data),
+    onMutate: async (newData) => {
+      // Cancel outgoing refetches
+      await queryClient.cancelQueries({ queryKey: ['todos'] })
+      
+      // Snapshot previous value
+      const previous = queryClient.getQueryData(['todos'])
+      
+      // Optimistically update
+      queryClient.setQueryData(['todos'], newData)
+      
+      return { previous }
+    },
+    onError: (err, newData, context) => {
+      // Rollback on error
+      queryClient.setQueryData(['todos'], context.previous)
+    },
+    onSettled: () => {
+      // Always refetch after error or success
+      queryClient.invalidateQueries({ queryKey: ['todos'] })
+    }
+  }
+})
+```
+
+## Benefits
+
+### Combined Power
+
+Get the best of both worlds:
+
+**From Legend-State:**
+- Fine-grained reactivity
+- Computed values
+- Local state management
+- Persistence
+
+**From TanStack Query:**
+- Automatic caching
+- Background refetching
+- Deduplication
+- Window focus refetching
+- Network status handling
+
+### Example
+
+```ts
+import { computed } from '@legendapp/state'
+
+const posts$ = syncedQuery({
+  queryClient,
+  query: {
+    queryKey: ['posts'],
+    queryFn: () => api.getPosts(),
+    staleTime: 5 * 60 * 1000
+  }
+})
+
+// Legend-State computed
+const publishedPosts$ = computed(() => 
+  posts$.get().filter(p => p.status === 'published')
+)
+
+// TanStack Query handles caching and refetching
+// Legend-State handles reactive filtering
+```
+
+## Best Practices
+
+1. **Use for server state**: Best for data fetched from APIs
+2. **Let Query handle caching**: Use TanStack Query's caching instead of manual cache management
+3. **Add persistence**: Combine with Legend-State persistence for offline support
+4. **Use computed**: Leverage Legend-State's computed for derived data
+5. **Handle errors**: Implement error handling in both query and mutation
+
+## When to Use
+
+**Use syncedQuery when:**
+- Working with server-cached data
+- Need automatic background refetching
+- Want deduplication and cache sharing
+- Need window focus/reconnect handling
+- Already using TanStack Query
+
+**Use synced() when:**
+- Need full control over caching
+- Working with WebSockets/real-time
+- Don't need TanStack Query features
+
+## See Also
+
+- [synced()](/api/sync/synced) - Core sync functionality
+- [Fetch Plugin](/api/sync-plugins/fetch) - Simple REST API sync
+- [TanStack Query Docs](https://tanstack.com/query/latest/docs/react/overview) - TanStack Query documentation

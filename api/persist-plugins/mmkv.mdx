@@ -1,0 +1,538 @@
+---
+title: MMKV Plugin
+description: High-performance persistence for React Native using MMKV
+---
+
+The MMKV plugin provides high-performance synchronous storage for React Native using [react-native-mmkv](https://github.com/mrousavy/react-native-mmkv). MMKV is up to 30x faster than AsyncStorage.
+
+## Installation
+
+```bash
+npm install @legendapp/state react-native-mmkv
+```
+
+For iOS, install pods:
+
+```bash
+cd ios && pod install
+```
+
+## Setup
+
+```ts
+import { configureObservableSync } from '@legendapp/state/sync'
+import { ObservablePersistMMKV } from '@legendapp/state/persist-plugins/mmkv'
+
+configureObservableSync({
+  persist: {
+    plugin: ObservablePersistMMKV
+  }
+})
+```
+
+## Configuration
+
+<ParamField path="id" type="string">
+  Unique identifier for the MMKV instance
+  
+  ```ts
+  plugin: new ObservablePersistMMKV({
+    id: 'myapp-storage'
+  })
+  ```
+</ParamField>
+
+<ParamField path="path" type="string">
+  Custom file path for the MMKV instance
+  
+  ```ts
+  plugin: new ObservablePersistMMKV({
+    path: `${USER_DIRECTORY}/storage`
+  })
+  ```
+</ParamField>
+
+<ParamField path="encryptionKey" type="string">
+  Encryption key for encrypted storage
+  
+  ```ts
+  plugin: new ObservablePersistMMKV({
+    id: 'secure-storage',
+    encryptionKey: 'my-encryption-key-123'
+  })
+  ```
+</ParamField>
+
+## Usage
+
+### Basic Usage
+
+```ts
+import { synced } from '@legendapp/state/sync'
+
+const user$ = synced({
+  get: () => api.getUser(),
+  persist: {
+    name: 'user'
+    // Uses globally configured MMKV plugin
+  }
+})
+```
+
+### With Custom Instance
+
+```ts
+import { ObservablePersistMMKV } from '@legendapp/state/persist-plugins/mmkv'
+
+const user$ = synced({
+  persist: {
+    name: 'user',
+    plugin: new ObservablePersistMMKV({
+      id: 'user-storage'
+    })
+  }
+})
+```
+
+### Per-Observable MMKV Config
+
+```ts
+const data$ = synced({
+  persist: {
+    name: 'data',
+    mmkv: {
+      id: 'custom-instance',
+      encryptionKey: 'secret'
+    }
+  }
+})
+```
+
+## Plugin API
+
+The MMKV plugin implements the `ObservablePersistPlugin` interface:
+
+### getTable()
+
+```ts
+getTable<T>(table: string, init: object, config: PersistOptions): T
+```
+
+Retrieves data from MMKV storage (synchronous).
+
+### set()
+
+```ts
+set(table: string, changes: Change[], config: PersistOptions): void
+```
+
+Saves changes to MMKV storage (synchronous).
+
+### getMetadata()
+
+```ts
+getMetadata(table: string, config: PersistOptions): PersistMetadata
+```
+
+Retrieves sync metadata.
+
+### setMetadata()
+
+```ts
+setMetadata(table: string, metadata: PersistMetadata, config: PersistOptions): void
+```
+
+Saves sync metadata.
+
+### deleteTable()
+
+```ts
+deleteTable(table: string, config: PersistOptions): void
+```
+
+Removes data from MMKV.
+
+### deleteMetadata()
+
+```ts
+deleteMetadata(table: string, config: PersistOptions): void
+```
+
+Removes metadata from MMKV.
+
+## Examples
+
+### Global Configuration
+
+```ts
+import { configureObservableSync } from '@legendapp/state/sync'
+import { ObservablePersistMMKV } from '@legendapp/state/persist-plugins/mmkv'
+
+configureObservableSync({
+  persist: {
+    plugin: new ObservablePersistMMKV({
+      id: 'app-storage'
+    })
+  }
+})
+```
+
+### Encrypted Storage
+
+```ts
+import { synced } from '@legendapp/state/sync'
+import { ObservablePersistMMKV } from '@legendapp/state/persist-plugins/mmkv'
+
+// Secure user data with encryption
+const user$ = synced({
+  get: () => api.getUser(),
+  persist: {
+    name: 'user',
+    plugin: new ObservablePersistMMKV({
+      id: 'secure-user-storage',
+      encryptionKey: getEncryptionKey()  // From secure storage
+    })
+  }
+})
+```
+
+### Multiple MMKV Instances
+
+```ts
+import { ObservablePersistMMKV } from '@legendapp/state/persist-plugins/mmkv'
+
+// Regular storage
+const settings$ = synced({
+  initial: { theme: 'light' },
+  persist: {
+    name: 'settings',
+    mmkv: { id: 'app-storage' }
+  }
+})
+
+// Encrypted storage for sensitive data
+const credentials$ = synced({
+  persist: {
+    name: 'credentials',
+    mmkv: {
+      id: 'secure-storage',
+      encryptionKey: 'my-secret-key'
+    }
+  }
+})
+
+// Separate instance for cache
+const cache$ = synced({
+  persist: {
+    name: 'cache',
+    mmkv: { id: 'cache-storage' }
+  }
+})
+```
+
+### App Settings
+
+```tsx
+import { synced } from '@legendapp/state/sync'
+import { observer } from '@legendapp/state/react'
+
+const settings$ = synced({
+  initial: {
+    theme: 'light',
+    notifications: true,
+    fontSize: 14
+  },
+  persist: { name: 'app-settings' }
+})
+
+const SettingsScreen = observer(function SettingsScreen() {
+  return (
+    <View>
+      <Switch
+        value={settings$.theme.get() === 'dark'}
+        onValueChange={(dark) => 
+          settings$.theme.set(dark ? 'dark' : 'light')
+        }
+      />
+      <Text>Dark Mode</Text>
+      
+      <Slider
+        value={settings$.fontSize.get()}
+        onValueChange={(size) => settings$.fontSize.set(size)}
+        minimumValue={12}
+        maximumValue={24}
+      />
+      <Text>Font Size</Text>
+    </View>
+  )
+})
+```
+
+### User Session
+
+```ts
+import { synced } from '@legendapp/state/sync'
+import { when } from '@legendapp/state'
+
+interface User {
+  id: string
+  name: string
+  email: string
+  token: string
+}
+
+const user$ = synced<User | null>({
+  get: async () => {
+    const token = user$.token.get()
+    if (!token) return null
+    return api.getCurrentUser(token)
+  },
+  persist: { name: 'user' }
+})
+
+// Wait for user to load
+await when(() => !!user$.get())
+
+if (user$.get()) {
+  navigateToHome()
+} else {
+  navigateToLogin()
+}
+
+// Logout
+function logout() {
+  user$.set(null)
+}
+```
+
+### Offline-First Todo App
+
+```tsx
+import { synced } from '@legendapp/state/sync'
+import { observer } from '@legendapp/state/react'
+
+interface Todo {
+  id: string
+  title: string
+  done: boolean
+}
+
+const todos$ = synced<Todo[]>({
+  get: () => api.getTodos(),
+  set: ({ value }) => api.saveTodos(value),
+  initial: [],
+  persist: {
+    name: 'todos',
+    retrySync: true  // Retry failed syncs
+  }
+})
+
+const TodoList = observer(function TodoList() {
+  const todos = todos$.get()
+  
+  return (
+    <FlatList
+      data={todos}
+      renderItem={({ item, index }) => (
+        <View>
+          <Text>{item.title}</Text>
+          <Switch
+            value={item.done}
+            onValueChange={(done) => 
+              todos$[index].done.set(done)
+            }
+          />
+        </View>
+      )}
+    />
+  )
+})
+
+function addTodo(title: string) {
+  todos$.push({
+    id: Date.now().toString(),
+    title,
+    done: false
+  })
+}
+```
+
+### Clear Storage
+
+```ts
+import { syncState } from '@legendapp/state/sync'
+
+const user$ = synced({
+  persist: { name: 'user' }
+})
+
+const settings$ = synced({
+  persist: { name: 'settings' }
+})
+
+async function clearAllData() {
+  await Promise.all([
+    syncState(user$).resetPersistence(),
+    syncState(settings$).resetPersistence()
+  ])
+}
+
+// Or clear specific instance
+import { MMKV } from 'react-native-mmkv'
+const storage = new MMKV({ id: 'app-storage' })
+storage.clearAll()
+```
+
+## MMKV v3 vs v4 Support
+
+The plugin automatically detects and supports both MMKV v3 and v4:
+
+```ts
+// v3 (deprecated)
+const storage = new MMKV({ id: 'storage' })
+storage.delete('key')  // v3 API
+
+// v4 (current)
+import { createMMKV } from 'react-native-mmkv'
+const storage = createMMKV({ id: 'storage' })
+storage.remove('key')  // v4 API
+
+// Plugin works with both automatically
+```
+
+## Performance
+
+MMKV is significantly faster than AsyncStorage:
+
+| Operation | AsyncStorage | MMKV |
+|-----------|-------------|------|
+| Read | ~2-3ms | ~0.1ms |
+| Write | ~5-10ms | ~0.2ms |
+| **Speedup** | - | **~30x** |
+
+```ts
+// AsyncStorage (async, slow)
+import AsyncStorage from '@react-native-async-storage/async-storage'
+const value = await AsyncStorage.getItem('key')  // ~3ms
+
+// MMKV (sync, fast)
+import { MMKV } from 'react-native-mmkv'
+const storage = new MMKV()
+const value = storage.getString('key')  // ~0.1ms
+```
+
+## Encryption
+
+MMKV supports AES-256 encryption:
+
+```ts
+import { ObservablePersistMMKV } from '@legendapp/state/persist-plugins/mmkv'
+import * as Keychain from 'react-native-keychain'
+
+// Get encryption key from keychain
+const credentials = await Keychain.getGenericPassword()
+const encryptionKey = credentials.password
+
+const securePlugin = new ObservablePersistMMKV({
+  id: 'secure-storage',
+  encryptionKey
+})
+
+const sensitiveData$ = synced({
+  persist: {
+    name: 'sensitive',
+    plugin: securePlugin
+  }
+})
+```
+
+## Storage Size
+
+MMKV can handle large datasets efficiently:
+
+```ts
+// Works well even with large data
+const largeData$ = synced({
+  initial: {
+    items: Array.from({ length: 10000 }, (_, i) => ({
+      id: i,
+      data: 'large string...'
+    }))
+  },
+  persist: { name: 'large-data' }
+})
+
+// Still fast to read/write individual items
+largeData$.items[5000].data.set('updated')
+```
+
+## Best Practices
+
+1. **Use globally**: Configure MMKV once at app startup
+2. **Encrypt sensitive data**: Use encryption for credentials, tokens, etc.
+3. **Separate instances**: Use different instances for different data types
+4. **Monitor size**: MMKV is fast but still has storage limits
+5. **Clear on logout**: Remove sensitive data when user logs out
+
+## Migration from AsyncStorage
+
+```ts
+import AsyncStorage from '@react-native-async-storage/async-storage'
+import { MMKV } from 'react-native-mmkv'
+
+const storage = new MMKV({ id: 'app-storage' })
+
+// Migrate existing data
+const keys = await AsyncStorage.getAllKeys()
+const items = await AsyncStorage.multiGet(keys)
+
+for (const [key, value] of items) {
+  if (value) {
+    storage.set(key, value)
+  }
+}
+
+// Clear old AsyncStorage
+await AsyncStorage.clear()
+
+// Update plugin
+import { ObservablePersistMMKV } from '@legendapp/state/persist-plugins/mmkv'
+
+configureObservableSync({
+  persist: {
+    plugin: new ObservablePersistMMKV({ id: 'app-storage' })
+  }
+})
+```
+
+## Debugging
+
+MMKV provides helpful debugging methods:
+
+```ts
+import { MMKV } from 'react-native-mmkv'
+
+const storage = new MMKV({ id: 'app-storage' })
+
+// List all keys
+console.log('Keys:', storage.getAllKeys())
+
+// Check if key exists
+if (storage.contains('user')) {
+  console.log('User data exists')
+}
+
+// Get storage size
+const size = storage.size
+console.log(`Storage size: ${size} bytes`)
+
+// Clear all data
+storage.clearAll()
+```
+
+## See Also
+
+- [AsyncStorage Plugin](/api/persist-plugins/async-storage) - Standard React Native storage
+- [synced()](/api/sync/synced) - Create synced observables
+- [configureObservableSync()](/api/sync/configure) - Global configuration
+- [react-native-mmkv](https://github.com/mrousavy/react-native-mmkv) - MMKV library documentation

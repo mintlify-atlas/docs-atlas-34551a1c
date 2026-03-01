@@ -1,0 +1,324 @@
+---
+title: Memo
+description: Component for memoizing and scoping reactive computations
+---
+
+`Memo` is a React component that memoizes its children and optionally creates a scoped tracking context for computed values.
+
+## Usage
+
+```tsx
+import { Memo } from '@legendapp/state/react'
+import { state$ } from './state'
+
+function Component() {
+  return (
+    <Memo>
+      {() => {
+        const total = state$.items.get().reduce((sum, item) => sum + item.price, 0)
+        return <div>Total: ${total}</div>
+      }}
+    </Memo>
+  )
+}
+```
+
+## Signature
+
+```typescript
+function Memo(props: {
+  children: any
+  scoped?: boolean
+}): ReactElement
+```
+
+## Props
+
+<ParamField path="children" type="any" required>
+  The content to render. Can be:
+  - A function that returns React elements
+  - An observable that resolves to React elements
+  - Any renderable React node
+  
+  When a function or observable, changes are tracked and only cause re-renders when the result changes.
+</ParamField>
+
+<ParamField path="scoped" type="boolean" optional default="false">
+  Controls the memoization behavior:
+  
+  - `false` (default): Memoizes based on children identity. Won't re-render unless the children prop reference changes.
+  - `true`: Creates a fresh scope on each render. Useful when the children function needs to access updated local state or props.
+</ParamField>
+
+## Returns
+
+<ResponseField name="ReactElement" type="ReactElement">
+  The rendered result of the children.
+</ResponseField>
+
+## Examples
+
+### Basic memoization
+
+```tsx
+function ExpensiveList() {
+  return (
+    <Memo>
+      {() => {
+        const items = state$.items.get()
+        // This computation only runs when state$.items changes
+        const sorted = items.sort((a, b) => a.name.localeCompare(b.name))
+        return sorted.map(item => <div key={item.id}>{item.name}</div>)
+      }}
+    </Memo>
+  )
+}
+```
+
+### With observable children
+
+```tsx
+const content$ = observable(() => {
+  const count = state$.count.get()
+  return <div>Count: {count}</div>
+})
+
+function Component() {
+  return <Memo>{content$}</Memo>
+}
+```
+
+### Computed values
+
+```tsx
+function CartSummary() {
+  return (
+    <div>
+      <h2>Cart</h2>
+      <Memo>
+        {() => {
+          const items = state$.cart.items.get()
+          const total = items.reduce((sum, item) => sum + item.price, 0)
+          const tax = total * 0.1
+          const grandTotal = total + tax
+          
+          return (
+            <div>
+              <div>Subtotal: ${total.toFixed(2)}</div>
+              <div>Tax: ${tax.toFixed(2)}</div>
+              <div>Total: ${grandTotal.toFixed(2)}</div>
+            </div>
+          )
+        }}
+      </Memo>
+    </div>
+  )
+}
+```
+
+### Scoped memo with local state
+
+```tsx
+function SearchResults({ searchTerm }) {
+  return (
+    <Memo scoped>
+      {() => {
+        // With scoped=true, this re-evaluates when searchTerm prop changes
+        const results = state$.items.get().filter(item => 
+          item.name.toLowerCase().includes(searchTerm.toLowerCase())
+        )
+        return (
+          <div>
+            <p>Found {results.length} results</p>
+            {results.map(item => <div key={item.id}>{item.name}</div>)}
+          </div>
+        )
+      }}
+    </Memo>
+  )
+}
+```
+
+### Default (unscoped) behavior
+
+```tsx
+function Component() {
+  const [filter, setFilter] = useState('all')
+  
+  // ❌ Won't update when filter changes - children function reference is stable
+  return (
+    <Memo>
+      {() => {
+        const items = state$.items.get()
+        return items.filter(item => item.status === filter).map(/* ... */)
+      }}
+    </Memo>
+  )
+}
+```
+
+```tsx
+function Component() {
+  const [filter, setFilter] = useState('all')
+  
+  // ✅ Updates when filter changes - scoped allows access to current closure
+  return (
+    <Memo scoped>
+      {() => {
+        const items = state$.items.get()
+        return items.filter(item => item.status === filter).map(/* ... */)
+      }}
+    </Memo>
+  )
+}
+```
+
+### Multiple computed sections
+
+```tsx
+function Dashboard() {
+  return (
+    <div>
+      <Memo>
+        {() => {
+          const users = state$.users.get()
+          return <div>Total Users: {users.length}</div>
+        }}
+      </Memo>
+      
+      <Memo>
+        {() => {
+          const products = state$.products.get()
+          const inStock = products.filter(p => p.inStock).length
+          return <div>{inStock} products in stock</div>
+        }}
+      </Memo>
+      
+      <Memo>
+        {() => {
+          const orders = state$.orders.get()
+          const pending = orders.filter(o => o.status === 'pending').length
+          return <div>{pending} orders pending</div>
+        }}
+      </Memo>
+    </div>
+  )
+}
+```
+
+## Behavior
+
+### Memoization strategy
+
+`Memo` is implemented using `React.memo` with a custom comparison function:
+
+- When `scoped={false}` (default): Only re-renders when the `children` prop reference changes
+- When `scoped={true}`: Creates a new scope on each parent render
+
+### Computed component
+
+Internally, `Memo` uses the `Computed` component, which:
+1. Tracks observable access in the children function
+2. Re-evaluates when tracked observables change
+3. Uses `useSelector` with `skipCheck: true` for optimization
+
+### Performance characteristics
+
+```tsx
+// Parent re-renders, but Memo child does not (unless state$.data changes)
+function Parent() {
+  const [localState, setLocalState] = useState(0)
+  
+  return (
+    <div>
+      <button onClick={() => setLocalState(v => v + 1)}>
+        Re-render parent
+      </button>
+      <Memo>
+        {() => <div>{state$.data.get()}</div>}
+      </Memo>
+    </div>
+  )
+}
+```
+
+## Comparison with observer
+
+### Memo
+- Inline computed sections within a component
+- Useful for isolating expensive computations
+- Children must be a function or observable
+- Fine-grained control over what's memoized
+
+### observer
+- Wraps entire component
+- Simpler for components that fully rely on observables
+- Works with normal JSX syntax
+- Automatic tracking throughout component
+
+```tsx
+// Using Memo for specific section
+function Component() {
+  return (
+    <div>
+      <StaticHeader />
+      <Memo>
+        {() => <DynamicContent data={state$.data.get()} />}
+      </Memo>
+    </div>
+  )
+}
+
+// Using observer for entire component
+const Component = observer(() => {
+  return (
+    <div>
+      <StaticHeader />
+      <DynamicContent data={state$.data.get()} />
+    </div>
+  )
+})
+```
+
+## When to use Memo
+
+### Use Memo when:
+- You want to memoize a specific section of a component
+- You have expensive computations derived from observables
+- You want to prevent re-renders of a computed section when parent re-renders
+- You need fine-grained control over reactive sections
+
+### Use observer instead when:
+- The entire component relies on observables
+- You want simpler, cleaner code
+- You want automatic tracking without explicit scoping
+
+### Use useMemo instead when:
+- You're computing from non-observable values
+- You need standard React memoization
+
+## Type definitions
+
+```typescript
+type MemoProps = {
+  children: any
+  scoped?: boolean
+}
+
+const Memo: NamedExoticComponent<MemoProps>
+```
+
+## Notes
+
+- `Memo` is a memoized version of the internal `Computed` component
+- When `scoped={false}`, the comparison function checks if `children` prop changed
+- When `scoped={true}`, the comparison always returns `true` (allows re-render)
+- Children functions should be pure (no side effects)
+- For side effects, use `useObserve` instead
+
+## Related
+
+- [observer](/api/react/observer) - Wrap entire components with tracking
+- [Computed](/api/react/computed) - Internal component used by Memo
+- [Show](/api/react/show) - Conditional rendering with observables
+- [useSelector](/api/react/use-selector) - Hook for tracking observables

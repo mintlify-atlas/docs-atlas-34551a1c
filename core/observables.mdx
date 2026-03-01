@@ -1,0 +1,229 @@
+---
+title: Observables
+description: Learn how to create and work with observables in Legend-State
+---
+
+## Overview
+
+Observables are the foundation of Legend-State. They are reactive containers that track their values and notify listeners when values change. Observables can wrap any JavaScript value: primitives, objects, arrays, Maps, Sets, and even Promises.
+
+## Creating Observables
+
+### Basic Observable
+
+Create an observable using the `observable()` function:
+
+```typescript
+import { observable } from '@legendapp/state'
+
+// Primitive values
+const count$ = observable(0)
+const name$ = observable('Alice')
+const isActive$ = observable(true)
+
+// Objects
+const user$ = observable({
+  name: 'Alice',
+  age: 30,
+  email: 'alice@example.com'
+})
+
+// Arrays
+const items$ = observable([1, 2, 3, 4, 5])
+
+// Nested structures
+const state$ = observable({
+  user: {
+    profile: {
+      name: 'Alice',
+      settings: {
+        theme: 'dark'
+      }
+    }
+  }
+})
+```
+
+### Observable with Undefined
+
+Create an observable without an initial value:
+
+```typescript
+const data$ = observable<string>()
+console.log(data$.get()) // undefined
+
+data$.set('Hello')
+console.log(data$.get()) // 'Hello'
+```
+
+### Observable Primitive
+
+For performance-critical scenarios with primitive values, use `observablePrimitive()`:
+
+```typescript
+import { observablePrimitive } from '@legendapp/state'
+
+const count$ = observablePrimitive(0)
+const flag$ = observablePrimitive(false)
+```
+
+<Note>
+`observablePrimitive()` is optimized for primitive values and doesn't support nested properties.
+</Note>
+
+## Observable Types
+
+### Objects
+
+When you create an observable from an object, each property becomes observable:
+
+```typescript
+const user$ = observable({
+  name: 'Alice',
+  age: 30
+})
+
+// Access nested observables
+user$.name.get() // 'Alice'
+user$.age.get()  // 30
+
+// Each property is also an observable
+user$.name.onChange(() => {
+  console.log('Name changed!')
+})
+```
+
+### Arrays
+
+Arrays work like objects, with each index becoming an observable:
+
+```typescript
+const todos$ = observable([
+  { id: 1, text: 'Buy milk', done: false },
+  { id: 2, text: 'Walk dog', done: true }
+])
+
+// Access elements
+todos$[0].text.get() // 'Buy milk'
+todos$[1].done.get() // true
+
+// Array methods are supported
+todos$.push({ id: 3, text: 'Write docs', done: false })
+
+const completed = todos$.filter(todo => todo.done.get())
+```
+
+### Maps and Sets
+
+Maps and Sets are fully supported:
+
+```typescript
+// Observable Map
+const users$ = observable(new Map([
+  ['alice', { name: 'Alice', age: 30 }],
+  ['bob', { name: 'Bob', age: 25 }]
+]))
+
+users$.get('alice').name.get() // 'Alice'
+users$.set('charlie', { name: 'Charlie', age: 35 })
+
+// Observable Set
+const tags$ = observable(new Set(['javascript', 'react']))
+
+tags$.size // 2
+tags$.add('typescript')
+tags$.has('react') // true
+```
+
+### Booleans
+
+Boolean observables have a special `toggle()` method:
+
+```typescript
+const isOpen$ = observable(false)
+
+isOpen$.toggle() // Sets to true
+isOpen$.toggle() // Sets to false
+```
+
+## Type Signatures
+
+```typescript
+function observable<T>(): Observable<T | undefined>
+function observable<T>(
+  value: Promise<T> | (() => T) | T
+): Observable<T>
+```
+
+```typescript
+function observablePrimitive<T>(value: Promise<T>): ObservablePrimitive<T>
+function observablePrimitive<T>(value?: T): ObservablePrimitive<T>
+```
+
+## Observable Interface
+
+Every observable implements the following core methods:
+
+```typescript
+interface Observable<T> {
+  get(): T                    // Get the current value (reactive)
+  peek(): T                   // Get the current value (non-reactive)
+  set(value: T): void        // Set a new value
+  onChange(callback): void   // Listen for changes
+  delete(): void             // Delete the observable
+}
+```
+
+<Note>
+The `Observable` type automatically infers the correct structure based on your data. Objects become `ObservableObject`, arrays become `ObservableArray`, etc.
+</Note>
+
+## Working with Promises
+
+Observables can wrap Promises, which resolve asynchronously:
+
+```typescript
+const data$ = observable(
+  fetch('/api/user').then(res => res.json())
+)
+
+// Initially undefined
+console.log(data$.get()) // undefined
+
+// After promise resolves
+await when(data$)
+console.log(data$.get()) // { name: 'Alice', ... }
+
+// Check loading state
+if (data$.get()) {
+  console.log('Data loaded!')
+}
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Use $ Suffix" icon="dollar-sign">
+    Conventionally, append `$` to observable variable names to distinguish them from regular values.
+  </Card>
+  <Card title="Avoid Over-nesting" icon="layer-group">
+    While deep nesting is supported, consider flattening your state structure for better performance.
+  </Card>
+  <Card title="Type Your Observables" icon="code">
+    Always provide TypeScript types for better autocomplete and type safety.
+  </Card>
+  <Card title="Use Primitives Wisely" icon="bolt">
+    Use `observablePrimitive()` for counters, flags, and other simple values that change frequently.
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Getting and Setting" href="/core/getting-and-setting" icon="arrows-rotate">
+    Learn how to read and update observable values
+  </Card>
+  <Card title="Observing Changes" href="/core/observing-changes" icon="eye">
+    Set up listeners to react to changes
+  </Card>
+</CardGroup>

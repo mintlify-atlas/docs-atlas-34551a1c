@@ -1,0 +1,401 @@
+---
+title: Switch
+description: Multi-case conditional rendering based on observable values
+---
+
+`Switch` is a React component that renders different content based on the value of an observable, similar to a switch statement in JavaScript.
+
+## Usage
+
+```tsx
+import { Switch } from '@legendapp/state/react'
+import { state$ } from './state'
+
+function StatusDisplay() {
+  return (
+    <Switch value={state$.status}>
+      {{
+        pending: () => <Spinner />,
+        success: () => <SuccessMessage />,
+        error: () => <ErrorMessage />,
+        default: () => <div>Unknown status</div>
+      }}
+    </Switch>
+  )
+}
+```
+
+## Signature
+
+```typescript
+// For string/number/symbol types
+function Switch<T extends string | number | symbol>({
+  value,
+  children
+}: {
+  value?: Selector<T | undefined | null>
+  children: Partial<Record<T | 'null' | 'undefined' | 'default', () => ReactNode>>
+}): ReactElement | null
+
+// For boolean types
+function Switch<T extends boolean>({
+  value,
+  children
+}: {
+  value?: Selector<T | undefined | null>
+  children: Partial<Record<'false' | 'true' | 'null' | 'undefined' | 'default', () => ReactNode>>
+}): ReactElement | null
+
+// For object types
+function Switch<T extends object>({
+  value,
+  children
+}: {
+  value?: Selector<T>
+  children: Partial<Record<keyof T | 'null' | 'undefined' | 'default', () => ReactNode>>
+}): ReactElement | null
+```
+
+## Props
+
+<ParamField path="value" type="Selector<T>" optional>
+  A selector or observable whose value determines which case to render.
+  
+  The value can be:
+  - A string, number, or symbol (compared directly)
+  - A boolean (`true` or `false`)
+  - An object (uses keys to determine case)
+  - `null` or `undefined` (special cases)
+</ParamField>
+
+<ParamField path="children" type="Record<CaseKey, () => ReactNode>" required>
+  An object mapping case values to render functions. Each key represents a case:
+  
+  - String/number/symbol values: Use the value as the key
+  - Boolean: Use `'true'` or `'false'` as keys
+  - `null`: Use `'null'` as key
+  - `undefined`: Use `'undefined'` as key
+  - Fallback: Use `'default'` as key
+  
+  Each value must be a function that returns a ReactNode.
+</ParamField>
+
+## Returns
+
+<ResponseField name="ReactNode" type="ReactNode">
+  The result of calling the matching case function, or the `default` case if no match is found, or `null` if no match and no default.
+</ResponseField>
+
+## Examples
+
+### String values
+
+```tsx
+<Switch value={state$.userRole}>
+  {{
+    admin: () => <AdminDashboard />,
+    editor: () => <EditorDashboard />,
+    viewer: () => <ViewerDashboard />,
+    default: () => <GuestDashboard />
+  }}
+</Switch>
+```
+
+### Number values
+
+```tsx
+<Switch value={state$.selectedTab}>
+  {{
+    0: () => <HomeTab />,
+    1: () => <ProfileTab />,
+    2: () => <SettingsTab />,
+    default: () => <NotFoundTab />
+  }}
+</Switch>
+```
+
+### Boolean values
+
+```tsx
+<Switch value={state$.isEnabled}>
+  {{
+    true: () => <EnabledView />,
+    false: () => <DisabledView />
+  }}
+</Switch>
+```
+
+### Handling null and undefined
+
+```tsx
+<Switch value={state$.data}>
+  {{
+    null: () => <div>Data is null</div>,
+    undefined: () => <div>Data is undefined</div>,
+    default: () => <DataDisplay data={state$.data.get()} />
+  }}
+</Switch>
+```
+
+### Loading states
+
+```tsx
+<Switch value={state$.loadingState}>
+  {{
+    idle: () => <Button onClick={loadData}>Load</Button>,
+    loading: () => <Spinner />,
+    success: () => <DataTable data={state$.data.get()} />,
+    error: () => <ErrorMessage error={state$.error.get()} />,
+    default: () => <div>Unknown state</div>
+  }}
+</Switch>
+```
+
+### With selector function
+
+```tsx
+<Switch value={() => {
+  const count = state$.items.get().length
+  if (count === 0) return 'empty'
+  if (count < 10) return 'few'
+  return 'many'
+}}>
+  {{
+    empty: () => <EmptyState />,
+    few: () => <CompactList />,
+    many: () => <PaginatedList />
+  }}
+</Switch>
+```
+
+### Request status
+
+```tsx
+type RequestStatus = 'idle' | 'pending' | 'success' | 'error'
+
+<Switch value={state$.requestStatus as Selector<RequestStatus>}>
+  {{
+    idle: () => <Button>Start Request</Button>,
+    pending: () => (
+      <div>
+        <Spinner />
+        <span>Loading...</span>
+      </div>
+    ),
+    success: () => (
+      <div>
+        <CheckIcon />
+        <span>Success!</span>
+      </div>
+    ),
+    error: () => (
+      <div>
+        <ErrorIcon />
+        <span>Request failed</span>
+        <button onClick={retry}>Retry</button>
+      </div>
+    )
+  }}
+</Switch>
+```
+
+### Object as discriminator
+
+```tsx
+type Shape = 
+  | { type: 'circle'; radius: number }
+  | { type: 'square'; size: number }
+  | { type: 'rectangle'; width: number; height: number }
+
+<Switch value={() => state$.shape.get().type}>
+  {{
+    circle: () => <Circle radius={state$.shape.radius.get()} />,
+    square: () => <Square size={state$.shape.size.get()} />,
+    rectangle: () => (
+      <Rectangle 
+        width={state$.shape.width.get()} 
+        height={state$.shape.height.get()} 
+      />
+    )
+  }}
+</Switch>
+```
+
+### Without default case
+
+```tsx
+// Returns null if status doesn't match any case
+<Switch value={state$.status}>
+  {{
+    success: () => <SuccessIcon />,
+    error: () => <ErrorIcon />
+  }}
+</Switch>
+```
+
+### Complex case rendering
+
+```tsx
+<Switch value={state$.viewMode}>
+  {{
+    grid: () => {
+      const items = state$.items.get()
+      return (
+        <div className="grid">
+          {items.map(item => <GridItem key={item.id} item={item} />)}
+        </div>
+      )
+    },
+    list: () => {
+      const items = state$.items.get()
+      return (
+        <div className="list">
+          {items.map(item => <ListItem key={item.id} item={item} />)}
+        </div>
+      )
+    },
+    table: () => <DataTable items={state$.items} />
+  }}
+</Switch>
+```
+
+## Behavior
+
+### Value matching
+
+`Switch` uses direct key lookup on the `children` object:
+
+```tsx
+const value = useSelector(props.value)
+const child = children[value!]
+return (child ? child() : children['default']?.()) ?? null
+```
+
+### Special case keys
+
+For special values, use string keys:
+- Boolean `true` → `'true'`
+- Boolean `false` → `'false'`  
+- `null` → `'null'`
+- `undefined` → `'undefined'`
+
+### Fallback behavior
+
+1. If the value matches a case key, that case is rendered
+2. If no match and `default` case exists, the default is rendered
+3. If no match and no default, returns `null`
+
+### Lazy evaluation
+
+Case functions are only called when that case is active:
+
+```tsx
+<Switch value={state$.status}>
+  {{
+    // This function only runs when status === 'pending'
+    pending: () => {
+      console.log('Rendering pending')
+      return <Spinner />
+    },
+    // This function only runs when status === 'success'
+    success: () => {
+      console.log('Rendering success')
+      return <SuccessView />
+    }
+  }}
+</Switch>
+```
+
+## Performance
+
+`Switch` uses `useSelector` internally to track the value observable:
+
+```tsx
+const value = useSelector(props.value)
+```
+
+This means:
+- Component only re-renders when the value changes
+- Only the active case function is called
+- Efficient for frequently changing values
+
+## Comparison with alternatives
+
+### Switch vs Show
+
+```tsx
+// Using Switch
+<Switch value={state$.status}>
+  {{
+    pending: () => <Spinner />,
+    success: () => <Success />,
+    error: () => <Error />
+  }}
+</Switch>
+
+// Using Show (less elegant for multiple cases)
+<Show if={() => state$.status.get() === 'pending'}>
+  <Spinner />
+</Show>
+<Show if={() => state$.status.get() === 'success'}>
+  <Success />
+</Show>
+<Show if={() => state$.status.get() === 'error'}>
+  <Error />
+</Show>
+```
+
+### Switch vs JavaScript
+
+```tsx
+// Using Switch component
+<Switch value={state$.status}>
+  {{
+    pending: () => <Spinner />,
+    success: () => <Success />,
+    error: () => <Error />
+  }}
+</Switch>
+
+// Using JavaScript switch
+{(() => {
+  const status = useSelector(state$.status)
+  switch (status) {
+    case 'pending': return <Spinner />
+    case 'success': return <Success />
+    case 'error': return <Error />
+    default: return null
+  }
+})()}
+
+// Using object lookup
+{{
+  pending: <Spinner />,
+  success: <Success />,
+  error: <Error />
+}[useSelector(state$.status)] || null}
+```
+
+## Type Parameters
+
+<ParamField path="T" type="type">
+  The type of the value being switched on. Can be:
+  - `string | number | symbol` - Direct value matching
+  - `boolean` - Uses 'true'/'false' string keys
+  - `object` - Uses object keys for cases
+</ParamField>
+
+## Notes
+
+- All case values must be functions that return ReactNode
+- Case functions are called lazily only when needed
+- Uses `useSelector` internally for reactive value tracking
+- Returns `null` if no case matches and no default provided
+- Type-safe: TypeScript enforces valid case keys based on value type
+
+## Related
+
+- [Show](/api/react/show) - Binary conditional rendering
+- [For](/api/react/for) - List rendering
+- [useSelector](/api/react/use-selector) - Observable value subscription
+- [observer](/api/react/observer) - Automatic observable tracking

@@ -1,0 +1,459 @@
+---
+title: 'Type Transformers'
+description: 'Helper functions for transforming observable values between different types'
+---
+
+## Overview
+
+Type transformer helpers allow you to create linked observables that automatically transform values between different types. These are useful when you need to store data in one format but work with it in another.
+
+All type transformers return a `Linked` observable that synchronizes bidirectionally with the source observable.
+
+## Array Transformers
+
+### arrayAsRecord
+
+Transforms an array into a record (object) using a specified key field.
+
+```typescript
+function arrayAsRecord<T, TKey extends keyof T>(
+    arr$: ObservableParam<T[]>,
+    keyField: TKey = 'id' as TKey
+): Linked<Record<string, T>>
+```
+
+<ParamField path="arr$" type="ObservableParam<T[]>" required>
+  The source array observable
+</ParamField>
+
+<ParamField path="keyField" type="TKey" default="'id'">
+  The field to use as the record key
+</ParamField>
+
+**Example:**
+
+```typescript
+import { observable } from '@legendapp/state';
+import { arrayAsRecord } from '@legendapp/state/helpers';
+
+const users$ = observable([
+    { id: '1', name: 'Alice' },
+    { id: '2', name: 'Bob' }
+]);
+
+const usersRecord$ = arrayAsRecord(users$, 'id');
+
+// Get as record
+console.log(usersRecord$.get());
+// { '1': { id: '1', name: 'Alice' }, '2': { id: '2', name: 'Bob' } }
+
+// Set from record - syncs back to array
+usersRecord$.set({
+    '3': { id: '3', name: 'Charlie' }
+});
+
+console.log(users$.get());
+// [{ id: '3', name: 'Charlie' }]
+```
+
+### arrayAsSet
+
+Transforms an array into a Set.
+
+```typescript
+function arrayAsSet<T>(arr$: ObservableParam<T[]>): Linked<Set<T>>
+```
+
+<ParamField path="arr$" type="ObservableParam<T[]>" required>
+  The source array observable
+</ParamField>
+
+**Example:**
+
+```typescript
+import { observable } from '@legendapp/state';
+import { arrayAsSet } from '@legendapp/state/helpers';
+
+const tags$ = observable(['react', 'typescript', 'react']);
+const tagsSet$ = arrayAsSet(tags$);
+
+// Get as Set (duplicates removed)
+console.log(tagsSet$.get());
+// Set { 'react', 'typescript' }
+
+// Set from Set - syncs back to array
+tagsSet$.set(new Set(['vue', 'javascript']));
+
+console.log(tags$.get());
+// ['vue', 'javascript']
+```
+
+### arrayAsString
+
+Transforms an array into a JSON string.
+
+```typescript
+function arrayAsString<T extends any[]>(arr$: ObservableParam<T>): Linked<string>
+```
+
+<ParamField path="arr$" type="ObservableParam<T>" required>
+  The source array observable
+</ParamField>
+
+**Example:**
+
+```typescript
+import { observable } from '@legendapp/state';
+import { arrayAsString } from '@legendapp/state/helpers';
+
+const items$ = observable([1, 2, 3]);
+const itemsStr$ = arrayAsString(items$);
+
+// Get as JSON string
+console.log(itemsStr$.get());
+// '[1,2,3]'
+
+// Set from string - syncs back to array
+itemsStr$.set('[4,5,6]');
+
+console.log(items$.get());
+// [4, 5, 6]
+```
+
+## Record Transformers
+
+### recordAsArray
+
+Transforms a record (object) into an array using a specified key field.
+
+```typescript
+function recordAsArray<T, TKey extends keyof T>(
+    record$: ObservableParam<Record<string | number, T>>,
+    keyField: TKey = 'id' as TKey
+): Linked<T[]>
+```
+
+<ParamField path="record$" type="ObservableParam<Record<string | number, T>>" required>
+  The source record observable
+</ParamField>
+
+<ParamField path="keyField" type="TKey" default="'id'">
+  The field to use as the array item key
+</ParamField>
+
+**Example:**
+
+```typescript
+import { observable } from '@legendapp/state';
+import { recordAsArray } from '@legendapp/state/helpers';
+
+const usersRecord$ = observable({
+    '1': { id: '1', name: 'Alice' },
+    '2': { id: '2', name: 'Bob' }
+});
+
+const users$ = recordAsArray(usersRecord$, 'id');
+
+// Get as array
+console.log(users$.get());
+// [{ id: '1', name: 'Alice' }, { id: '2', name: 'Bob' }]
+
+// Set from array - syncs back to record
+users$.set([{ id: '3', name: 'Charlie' }]);
+
+console.log(usersRecord$.get());
+// { '3': { id: '3', name: 'Charlie' } }
+```
+
+### recordAsString
+
+Transforms a record into a JSON string.
+
+```typescript
+function recordAsString(record$: ObservableParam<Record<any, any>>): Linked<string>
+```
+
+<ParamField path="record$" type="ObservableParam<Record<any, any>>" required>
+  The source record observable
+</ParamField>
+
+**Example:**
+
+```typescript
+import { observable } from '@legendapp/state';
+import { recordAsString } from '@legendapp/state/helpers';
+
+const config$ = observable({ theme: 'dark', lang: 'en' });
+const configStr$ = recordAsString(config$);
+
+// Get as JSON string
+console.log(configStr$.get());
+// '{"theme":"dark","lang":"en"}'
+
+// Set from string - syncs back to record
+configStr$.set('{"theme":"light","lang":"fr"}');
+
+console.log(config$.get());
+// { theme: 'light', lang: 'fr' }
+```
+
+## Set Transformers
+
+### setAsArray
+
+Transforms a Set into an array.
+
+```typescript
+function setAsArray<T>(set$: ObservableParam<Set<T>>): Linked<T[]>
+```
+
+<ParamField path="set$" type="ObservableParam<Set<T>>" required>
+  The source Set observable
+</ParamField>
+
+**Example:**
+
+```typescript
+import { observable } from '@legendapp/state';
+import { setAsArray } from '@legendapp/state/helpers';
+
+const tagsSet$ = observable(new Set(['react', 'typescript']));
+const tags$ = setAsArray(tagsSet$);
+
+// Get as array
+console.log(tags$.get());
+// ['react', 'typescript']
+
+// Set from array - syncs back to Set
+tags$.set(['vue', 'javascript']);
+
+console.log(tagsSet$.get());
+// Set { 'vue', 'javascript' }
+```
+
+### setAsString
+
+Transforms a Set into a JSON string (via array serialization).
+
+```typescript
+function setAsString(set$: ObservableParam<Set<any>>): Linked<string>
+```
+
+<ParamField path="set$" type="ObservableParam<Set<any>>" required>
+  The source Set observable
+</ParamField>
+
+**Example:**
+
+```typescript
+import { observable } from '@legendapp/state';
+import { setAsString } from '@legendapp/state/helpers';
+
+const permissions$ = observable(new Set(['read', 'write']));
+const permissionsStr$ = setAsString(permissions$);
+
+// Get as JSON string
+console.log(permissionsStr$.get());
+// '["read","write"]'
+
+// Set from string - syncs back to Set
+permissionsStr$.set('["admin"]');
+
+console.log(permissions$.get());
+// Set { 'admin' }
+```
+
+## String Transformers
+
+### stringAsArray
+
+Transforms a JSON string into an array.
+
+```typescript
+function stringAsArray<T>(str$: ObservableParam<string>): Linked<T[]>
+```
+
+<ParamField path="str$" type="ObservableParam<string>" required>
+  The source string observable containing JSON
+</ParamField>
+
+**Example:**
+
+```typescript
+import { observable } from '@legendapp/state';
+import { stringAsArray } from '@legendapp/state/helpers';
+
+const itemsStr$ = observable('[1,2,3]');
+const items$ = stringAsArray<number>(itemsStr$);
+
+// Get as array
+console.log(items$.get());
+// [1, 2, 3]
+
+// Set from array - syncs back to string
+items$.set([4, 5, 6]);
+
+console.log(itemsStr$.get());
+// '[4,5,6]'
+```
+
+### stringAsRecord
+
+Transforms a JSON string into a record (object).
+
+```typescript
+function stringAsRecord<T extends Record<string, any>>(str$: ObservableParam<string>): Linked<T>
+```
+
+<ParamField path="str$" type="ObservableParam<string>" required>
+  The source string observable containing JSON
+</ParamField>
+
+**Example:**
+
+```typescript
+import { observable } from '@legendapp/state';
+import { stringAsRecord } from '@legendapp/state/helpers';
+
+const configStr$ = observable('{"theme":"dark","lang":"en"}');
+const config$ = stringAsRecord<{ theme: string; lang: string }>(configStr$);
+
+// Get as object
+console.log(config$.get());
+// { theme: 'dark', lang: 'en' }
+
+// Set from object - syncs back to string
+config$.set({ theme: 'light', lang: 'fr' });
+
+console.log(configStr$.get());
+// '{"theme":"light","lang":"fr"}'
+```
+
+### stringAsSet
+
+Transforms a JSON string (array format) into a Set.
+
+```typescript
+function stringAsSet<T>(str$: ObservableParam<string>): Linked<Set<T>>
+```
+
+<ParamField path="str$" type="ObservableParam<string>" required>
+  The source string observable containing JSON array
+</ParamField>
+
+**Example:**
+
+```typescript
+import { observable } from '@legendapp/state';
+import { stringAsSet } from '@legendapp/state/helpers';
+
+const tagsStr$ = observable('["react","typescript"]');
+const tags$ = stringAsSet<string>(tagsStr$);
+
+// Get as Set
+console.log(tags$.get());
+// Set { 'react', 'typescript' }
+
+// Set from Set - syncs back to string
+tags$.set(new Set(['vue', 'javascript']));
+
+console.log(tagsStr$.get());
+// '["vue","javascript"]'
+```
+
+## Number Transformers
+
+### numberAsString
+
+Transforms a number into a string.
+
+```typescript
+function numberAsString(num$: ObservableParam<number>): Linked<string>
+```
+
+<ParamField path="num$" type="ObservableParam<number>" required>
+  The source number observable
+</ParamField>
+
+**Example:**
+
+```typescript
+import { observable } from '@legendapp/state';
+import { numberAsString } from '@legendapp/state/helpers';
+
+const count$ = observable(42);
+const countStr$ = numberAsString(count$);
+
+// Get as string
+console.log(countStr$.get());
+// '42'
+
+// Set from string - syncs back to number
+countStr$.set('100');
+
+console.log(count$.get());
+// 100
+```
+
+### stringAsNumber
+
+Transforms a string into a number.
+
+```typescript
+function stringAsNumber(num$: ObservableParam<string>): Linked<number>
+```
+
+<ParamField path="num$" type="ObservableParam<string>" required>
+  The source string observable
+</ParamField>
+
+**Example:**
+
+```typescript
+import { observable } from '@legendapp/state';
+import { stringAsNumber } from '@legendapp/state/helpers';
+
+const priceStr$ = observable('99.99');
+const price$ = stringAsNumber(priceStr$);
+
+// Get as number
+console.log(price$.get());
+// 99.99
+
+// Set from number - syncs back to string
+price$.set(149.99);
+
+console.log(priceStr$.get());
+// '149.99'
+
+// Invalid strings return 0
+priceStr$.set('invalid');
+console.log(price$.get());
+// 0
+```
+
+## Usage with Persistence
+
+Type transformers are especially useful when combined with persistence, allowing you to store data in one format while working with it in another:
+
+```typescript
+import { observable } from '@legendapp/state';
+import { arrayAsSet } from '@legendapp/state/helpers';
+import { persistObservable } from '@legendapp/state/persist';
+
+const tags$ = observable<string[]>([]);
+
+// Persist as array
+persistObservable(tags$, {
+    local: 'tags'
+});
+
+// Work with as Set
+const tagsSet$ = arrayAsSet(tags$);
+
+// Manipulate as Set
+tagsSet$.get().add('react');
+tagsSet$.get().delete('vue');
+
+// Changes are automatically synced to the array and persisted
+```

@@ -1,0 +1,402 @@
+---
+title: Getting and Setting Values
+description: Learn how to read and update values in observables
+---
+
+## Overview
+
+Legend-State provides three primary methods for reading observable values and several ways to update them. Understanding when to use each method is key to building reactive and performant applications.
+
+## Reading Values
+
+### get() - Reactive Access
+
+The `get()` method reads the current value and automatically tracks the access for reactivity:
+
+```typescript
+const count$ = observable(0)
+
+// Reactive read - will cause re-renders/re-runs when count changes
+const value = count$.get()
+console.log(value) // 0
+
+// In a reactive context
+observe(() => {
+  console.log('Count is:', count$.get())
+})
+
+count$.set(1) // Logs: "Count is: 1"
+```
+
+#### Shallow Tracking
+
+You can limit tracking to only shallow changes:
+
+```typescript
+const state$ = observable({
+  user: {
+    name: 'Alice',
+    age: 30
+  }
+})
+
+observe(() => {
+  // Only tracks changes to the user object itself, not nested properties
+  const user = state$.user.get(true) // Pass true for shallow
+  console.log('User changed:', user)
+})
+
+state$.user.name.set('Bob')  // Does not trigger
+state$.user.set({ name: 'Charlie', age: 35 }) // Triggers
+```
+
+### peek() - Non-Reactive Access
+
+The `peek()` method reads the current value without tracking it:
+
+```typescript
+const count$ = observable(0)
+const name$ = observable('Alice')
+
+observe(() => {
+  console.log('Count:', count$.get())    // Tracked
+  console.log('Name:', name$.peek())     // Not tracked
+})
+
+count$.set(1) // Triggers the observer
+name$.set('Bob') // Does NOT trigger the observer
+```
+
+<Note>
+Use `peek()` when you need to read a value inside a reactive context but don't want to create a dependency on it.
+</Note>
+
+### Direct Property Access
+
+For nested observables, you can chain property access:
+
+```typescript
+const state$ = observable({
+  user: {
+    profile: {
+      name: 'Alice',
+      email: 'alice@example.com'
+    }
+  }
+})
+
+// All of these create observables
+const user$ = state$.user
+const profile$ = state$.user.profile
+const name$ = state$.user.profile.name
+
+// Then read with get() or peek()
+name$.get() // 'Alice'
+```
+
+## Type Signatures
+
+```typescript
+interface Observable<T> {
+  get(trackingType?: TrackingType | GetOptions): T
+  peek(): T
+}
+
+type TrackingType = undefined | true | symbol
+// true === shallow tracking
+// undefined === deep tracking (default)
+
+interface GetOptions {
+  shallow?: boolean
+}
+```
+
+## Setting Values
+
+### set() - Update Values
+
+The `set()` method updates the observable's value:
+
+```typescript
+const count$ = observable(0)
+
+// Set to a new value
+count$.set(5)
+console.log(count$.get()) // 5
+
+// Set nested properties
+const user$ = observable({
+  name: 'Alice',
+  age: 30
+})
+
+user$.name.set('Bob')
+user$.age.set(31)
+```
+
+### set() with Functions
+
+Pass a function to compute the new value based on the previous value:
+
+```typescript
+const count$ = observable(0)
+
+// Increment
+count$.set(prev => prev + 1)
+
+// Conditional update
+const todos$ = observable([{ text: 'Buy milk', done: false }])
+todos$[0].done.set(prev => !prev)
+```
+
+<Warning>
+The function receives the raw value, not an observable. You don't need to call `.get()` on it.
+</Warning>
+
+### Setting Objects
+
+When setting an object, it replaces the entire value:
+
+```typescript
+const user$ = observable({
+  name: 'Alice',
+  age: 30,
+  email: 'alice@example.com'
+})
+
+// This REPLACES the entire object
+user$.set({
+  name: 'Bob',
+  age: 25,
+  email: 'bob@example.com'
+})
+
+// email is gone because we didn't include it
+user$.set({
+  name: 'Charlie',
+  age: 35
+}) // email property is now deleted
+```
+
+### Setting Arrays
+
+Arrays can be set directly or modified with array methods:
+
+```typescript
+const items$ = observable([1, 2, 3])
+
+// Replace entire array
+items$.set([4, 5, 6])
+
+// Array methods work reactively
+items$.push(7)
+items$.pop()
+items$.splice(1, 1, 10) // Remove index 1, insert 10
+
+// Set individual elements
+items$[0].set(100)
+```
+
+### Setting with Observables
+
+You can set an observable to link to another observable:
+
+```typescript
+const source$ = observable({ value: 10 })
+const target$ = observable({ data: null })
+
+// Link target to source
+target$.data.set(source$)
+
+// Now they're linked
+console.log(target$.data.value.get()) // 10
+source$.value.set(20)
+console.log(target$.data.value.get()) // 20
+```
+
+## Advanced Setting
+
+### assign() - Merge Objects
+
+Use `assign()` to merge properties instead of replacing:
+
+```typescript
+const user$ = observable({
+  name: 'Alice',
+  age: 30,
+  email: 'alice@example.com'
+})
+
+// Only updates specified properties
+user$.assign({
+  age: 31
+})
+
+// name and email are preserved
+console.log(user$.get())
+// { name: 'Alice', age: 31, email: 'alice@example.com' }
+```
+
+### delete() - Remove Values
+
+Delete an observable or a property:
+
+```typescript
+const data$ = observable({
+  a: 1,
+  b: 2,
+  c: 3
+})
+
+// Delete a property
+data$.b.delete()
+console.log(data$.get()) // { a: 1, c: 3 }
+
+// Delete from array
+const items$ = observable([1, 2, 3, 4])
+items$[1].delete() // Removes element at index 1
+console.log(items$.get()) // [1, 3, 4]
+```
+
+### toggle() - Boolean Values
+
+Boolean observables have a convenient `toggle()` method:
+
+```typescript
+const isOpen$ = observable(false)
+
+isOpen$.toggle() // Sets to true
+isOpen$.toggle() // Sets to false
+
+// Equivalent to:
+isOpen$.set(prev => !prev)
+```
+
+## Type Signatures
+
+```typescript
+interface Observable<T> {
+  set(value: T): void
+  set(value: (prev: T) => T): void
+  set(value: Promise<T>): void
+  set(value: Observable<T>): void
+  
+  assign(value: Partial<T>): Observable<T>
+  delete(): void
+  toggle(): void // Only on Observable<boolean>
+}
+```
+
+## Batching Updates
+
+When making multiple changes, batch them for better performance:
+
+```typescript
+import { batch } from '@legendapp/state'
+
+const state$ = observable({
+  count: 0,
+  name: 'Alice',
+  items: []
+})
+
+// All changes notify together
+batch(() => {
+  state$.count.set(10)
+  state$.name.set('Bob')
+  state$.items.set([1, 2, 3])
+})
+// Only one notification fires after the batch
+```
+
+See the [Batching](/core/batching) page for more details.
+
+## Common Patterns
+
+### Increment/Decrement
+
+```typescript
+const count$ = observable(0)
+
+// Increment
+count$.set(n => n + 1)
+
+// Decrement
+count$.set(n => n - 1)
+
+// Add value
+count$.set(n => n + 5)
+```
+
+### Toggle State
+
+```typescript
+const flags$ = observable({
+  isOpen: false,
+  isActive: true,
+  isLoading: false
+})
+
+flags$.isOpen.toggle()
+flags$.isActive.set(prev => !prev) // Alternative
+```
+
+### Conditional Updates
+
+```typescript
+const user$ = observable({
+  name: 'Alice',
+  age: 30
+})
+
+user$.age.set(age => age >= 18 ? age + 1 : age)
+```
+
+### Array Operations
+
+```typescript
+const todos$ = observable([
+  { id: 1, text: 'Buy milk', done: false },
+  { id: 2, text: 'Walk dog', done: true }
+])
+
+// Add item
+todos$.push({ id: 3, text: 'Write docs', done: false })
+
+// Remove item
+todos$.splice(1, 1)
+
+// Update item
+todos$[0].done.set(true)
+
+// Toggle item
+todos$[0].done.toggle()
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Use peek() for Side Effects" icon="eye-slash">
+    When reading values in side effects that shouldn't trigger re-runs, use `peek()` instead of `get()`.
+  </Card>
+  <Card title="Batch Multiple Updates" icon="layer-group">
+    Wrap multiple `set()` calls in `batch()` to avoid unnecessary re-renders.
+  </Card>
+  <Card title="Prefer assign() for Partials" icon="code-merge">
+    Use `assign()` to update some properties without affecting others.
+  </Card>
+  <Card title="Use Functions for Computations" icon="function">
+    When the new value depends on the old value, always use a function with `set()`.
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Observing Changes" href="/core/observing-changes" icon="eye">
+    Learn how to react to value changes
+  </Card>
+  <Card title="Batching" href="/core/batching" icon="layer-group">
+    Optimize updates with batching
+  </Card>
+</CardGroup>

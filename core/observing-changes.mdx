@@ -1,0 +1,472 @@
+---
+title: Observing Changes
+description: Learn how to listen and react to observable changes
+---
+
+## Overview
+
+The `observe()` function is the core mechanism for reacting to changes in observables. It automatically tracks which observables are accessed and re-runs when any of them change.
+
+## Basic Usage
+
+### Simple Observer
+
+Create a reactive observer that runs when dependencies change:
+
+```typescript
+import { observable, observe } from '@legendapp/state'
+
+const count$ = observable(0)
+
+observe(() => {
+  console.log('Count is:', count$.get())
+})
+// Logs: "Count is: 0"
+
+count$.set(1)
+// Logs: "Count is: 1"
+
+count$.set(2)
+// Logs: "Count is: 2"
+```
+
+### Selector and Reaction
+
+Separate the tracked selector from the reaction:
+
+```typescript
+const user$ = observable({
+  name: 'Alice',
+  age: 30
+})
+
+// Selector: what to track
+// Reaction: what to do when it changes
+observe(
+  () => user$.name.get(),
+  (e) => {
+    console.log('Name changed to:', e.value)
+    console.log('Previous name:', e.previous)
+  }
+)
+
+user$.name.set('Bob')
+// Logs: "Name changed to: Bob"
+// Logs: "Previous name: Alice"
+```
+
+## Type Signatures
+
+```typescript
+// Single function pattern
+function observe<T>(
+  run: (e: ObserveEvent<T>) => T | void,
+  options?: ObserveOptions
+): () => void
+
+// Selector + reaction pattern  
+function observe<T>(
+  selector: Selector<T> | (() => T),
+  reaction?: (e: ObserveEventCallback<T>) => any,
+  options?: ObserveOptions
+): () => void
+```
+
+```typescript
+interface ObserveEventCallback<T> {
+  value: T              // Current value
+  previous: T           // Previous value
+  num: number           // Number of times triggered
+  nodes: Map<NodeInfo, TrackingNode> // Tracked nodes
+  refresh: () => void   // Manually refresh
+}
+
+interface ObserveOptions {
+  immediate?: boolean   // Run immediately on changes (skip batching)
+}
+```
+
+## onChange() Method
+
+Every observable has an `onChange()` method for listening to its changes:
+
+```typescript
+const count$ = observable(0)
+
+const dispose = count$.onChange((params) => {
+  console.log('New value:', params.value)
+  console.log('Previous:', params.getPrevious())
+  console.log('Changes:', params.changes)
+})
+
+count$.set(1)
+// Logs: "New value: 1"
+
+// Stop listening
+dispose()
+```
+
+### onChange Parameters
+
+```typescript
+interface ListenerParams<T> {
+  value: T                    // Current value
+  getPrevious: () => T        // Function to get previous value
+  changes: Change[]           // Array of changes
+  isFromSync: boolean         // From sync operation
+  isFromPersist: boolean      // From persistence load
+}
+
+interface Change {
+  path: string[]              // Path to changed value
+  pathTypes: TypeAtPath[]     // Types along the path
+  valueAtPath: any            // New value at path
+  prevAtPath: any             // Previous value at path  
+}
+```
+
+## Tracking Options
+
+### Shallow Tracking
+
+Only track direct changes, not nested properties:
+
+```typescript
+const state$ = observable({
+  user: {
+    name: 'Alice',
+    age: 30
+  }
+})
+
+state$.user.onChange((params) => {
+  console.log('User changed!')
+}, { trackingType: true }) // true = shallow
+
+state$.user.name.set('Bob')  // Does NOT trigger
+state$.user.set({ name: 'Charlie', age: 35 }) // Triggers
+```
+
+### Immediate Execution
+
+Run the listener immediately, bypassing batching:
+
+```typescript
+const count$ = observable(0)
+
+count$.onChange(() => {
+  console.log('Immediate:', count$.get())
+}, { immediate: true })
+
+batch(() => {
+  count$.set(1)
+  count$.set(2)
+  count$.set(3)
+})
+// Logs three times immediately:
+// "Immediate: 1"
+// "Immediate: 2" 
+// "Immediate: 3"
+```
+
+### Run on Initial Value
+
+Run the listener once with the current value:
+
+```typescript
+const count$ = observable(5)
+
+count$.onChange((params) => {
+  console.log('Count:', params.value)
+}, { initial: true })
+// Immediately logs: "Count: 5"
+```
+
+## Advanced Patterns
+
+### Multiple Dependencies
+
+`observe()` automatically tracks all accessed observables:
+
+```typescript
+const firstName$ = observable('Alice')
+const lastName$ = observable('Smith')
+const age$ = observable(30)
+
+observe(() => {
+  const first = firstName$.get()
+  const last = lastName$.get()
+  const age = age$.get()
+  console.log(`${first} ${last}, age ${age}`)
+})
+// Logs: "Alice Smith, age 30"
+
+firstName$.set('Bob')
+// Logs: "Bob Smith, age 30"
+
+lastName$.set('Jones')
+// Logs: "Bob Jones, age 30"
+
+age$.set(31)
+// Logs: "Bob Jones, age 31"
+```
+
+### Conditional Tracking
+
+Track different observables based on conditions:
+
+```typescript
+const mode$ = observable<'edit' | 'view'>('view')
+const editData$ = observable({ text: 'Editing...' })
+const viewData$ = observable({ text: 'Viewing...' })
+
+observe(() => {
+  const mode = mode$.get()
+  
+  if (mode === 'edit') {
+    console.log('Edit:', editData$.get())
+  } else {
+    console.log('View:', viewData$.get())
+  }
+})
+
+// Only tracks mode$ and viewData$
+viewData$.set({ text: 'Updated view' }) // Triggers
+editData$.set({ text: 'Updated edit' })  // Does NOT trigger
+
+// Switch mode
+mode$.set('edit')
+// Now tracks mode$ and editData$
+editData$.set({ text: 'New edit' }) // Triggers
+viewData$.set({ text: 'New view' })  // Does NOT trigger
+```
+
+### Cleanup Functions
+
+Use cleanup functions for side effects:
+
+```typescript
+observe((e) => {
+  const id = userId$.get()
+  
+  // Start subscription
+  const subscription = subscribeToUser(id)
+  
+  // Cleanup when dependencies change or observer is disposed
+  e.onCleanup = () => {
+    subscription.unsubscribe()
+  }
+})
+```
+
+### Manual Refresh
+
+Manually re-run an observer:
+
+```typescript
+observe(
+  () => data$.get(),
+  (e) => {
+    console.log('Data:', e.value)
+    
+    // Manually refresh after some time
+    setTimeout(() => {
+      e.refresh()
+    }, 1000)
+  }
+)
+```
+
+## Listening to Deep Changes
+
+### Nested Object Changes
+
+```typescript
+const state$ = observable({
+  user: {
+    profile: {
+      name: 'Alice',
+      email: 'alice@example.com'
+    }
+  }
+})
+
+// Listen at the root
+state$.onChange((params) => {
+  console.log('Something changed!')
+  console.log('Change path:', params.changes[0].path)
+})
+
+state$.user.profile.name.set('Bob')
+// Logs: "Something changed!"
+// Logs: "Change path: ['user', 'profile', 'name']"
+```
+
+### Array Changes
+
+```typescript
+const todos$ = observable([
+  { id: 1, text: 'Buy milk', done: false },
+  { id: 2, text: 'Walk dog', done: true }
+])
+
+todos$.onChange((params) => {
+  console.log('Todos changed!')
+  console.log('New todos:', params.value)
+})
+
+todos$.push({ id: 3, text: 'Write docs', done: false })
+// Triggers with full new array
+
+todos$[0].done.toggle()
+// Also triggers - array item changed
+```
+
+## Disposing Observers
+
+All observe functions return a dispose function:
+
+```typescript
+const dispose = observe(() => {
+  console.log('Count:', count$.get())
+})
+
+// Later, stop observing
+dispose()
+
+// Changes no longer trigger the observer
+count$.set(100) // Nothing happens
+```
+
+## Performance Tips
+
+### Use peek() for Non-Dependencies
+
+```typescript
+const userId$ = observable(1)
+const config$ = observable({ apiUrl: '/api' })
+
+observe(() => {
+  const id = userId$.get()        // Tracked
+  const url = config$.peek()      // Not tracked
+  
+  fetchUser(url, id)
+})
+
+// Triggers re-run
+userId$.set(2)
+
+// Does NOT trigger re-run
+config$.set({ apiUrl: '/api/v2' })
+```
+
+### Shallow Tracking for Performance
+
+Avoid unnecessary re-runs with shallow tracking:
+
+```typescript
+const items$ = observable([
+  { id: 1, name: 'Item 1' },
+  { id: 2, name: 'Item 2' }
+])
+
+// Only re-run when array length changes, not item properties
+items$.onChange(() => {
+  console.log('Array length:', items$.length)
+}, { trackingType: true })
+
+items$[0].name.set('Updated') // Does NOT trigger
+items$.push({ id: 3, name: 'Item 3' }) // Triggers
+```
+
+### Batch Related Changes
+
+Group related changes to trigger only one observer run:
+
+```typescript
+import { batch } from '@legendapp/state'
+
+const state$ = observable({
+  count: 0,
+  total: 0,
+  average: 0
+})
+
+state$.onChange(() => {
+  console.log('State updated!')
+})
+
+batch(() => {
+  state$.count.set(10)
+  state$.total.set(100)
+  state$.average.set(10)
+})
+// Only logs "State updated!" once
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Dispose Observers" icon="trash">
+    Always dispose observers when they're no longer needed to prevent memory leaks.
+  </Card>
+  <Card title="Use Shallow Tracking" icon="layer-group">
+    For large objects, shallow tracking can significantly improve performance.
+  </Card>
+  <Card title="Cleanup Side Effects" icon="broom">
+    Use `onCleanup` to properly clean up subscriptions, timers, and other resources.
+  </Card>
+  <Card title="Avoid Infinite Loops" icon="rotate">
+    Don't modify the same observable you're tracking inside an observer without guards.
+  </Card>
+</CardGroup>
+
+## Common Pitfalls
+
+### Modifying Tracked Observables
+
+```typescript
+const count$ = observable(0)
+
+// ❌ Bad: Creates infinite loop
+observe(() => {
+  const value = count$.get()
+  count$.set(value + 1) // Never do this!
+})
+
+// ✅ Good: Use a separate observable or add guards
+const trigger$ = observable(0)
+const result$ = observable(0)
+
+observe(() => {
+  const value = trigger$.get()
+  result$.set(value + 1) // Safe
+})
+```
+
+### Accessing Without get()
+
+```typescript
+const user$ = observable({ name: 'Alice' })
+
+// ❌ Bad: Doesn't track changes
+observe(() => {
+  console.log(user$) // Just logs the observable
+})
+
+// ✅ Good: Use get() to track
+observe(() => {
+  console.log(user$.get()) // Tracks changes
+})
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Computed Observables" href="/core/computed-observables" icon="function">
+    Create derived values that update automatically
+  </Card>
+  <Card title="Batching" href="/core/batching" icon="layer-group">
+    Optimize updates with batching
+  </Card>
+</CardGroup>

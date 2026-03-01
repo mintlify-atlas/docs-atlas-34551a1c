@@ -1,0 +1,429 @@
+---
+title: Fetch Plugin
+description: Sync observables with REST APIs using the Fetch API
+---
+
+The Fetch plugin provides a simple way to sync observables with REST APIs using the browser's Fetch API. It's ideal for basic GET/POST operations.
+
+## Installation
+
+```bash
+npm install @legendapp/state
+```
+
+## Usage
+
+```ts
+import { syncedFetch } from '@legendapp/state/sync-plugins/fetch'
+
+const user$ = syncedFetch({
+  get: '/api/user',
+  set: '/api/user',
+  initial: { name: '', email: '' },
+  persist: {
+    name: 'user',
+    plugin: ObservablePersistLocalStorage
+  }
+})
+```
+
+## Parameters
+
+<ParamField path="get" type="Selector<string>" required>
+  URL or function returning URL for GET requests
+  
+  ```ts
+  // Static URL
+  get: '/api/data'
+  
+  // Dynamic URL
+  get: () => `/api/users/${userId$.get()}`
+  
+  // Observable URL
+  get: computed(() => `/api/users/${userId$.get()}`)
+  ```
+</ParamField>
+
+<ParamField path="set" type="Selector<string>">
+  URL or function returning URL for POST requests
+  
+  ```ts
+  set: '/api/data'
+  
+  set: () => `/api/users/${userId$.get()}`
+  ```
+</ParamField>
+
+<ParamField path="getInit" type="RequestInit">
+  Options for GET fetch requests
+  
+  ```ts
+  getInit: {
+    headers: {
+      'Authorization': `Bearer ${token}`
+    }
+  }
+  ```
+</ParamField>
+
+<ParamField path="setInit" type="RequestInit">
+  Options for POST fetch requests (method defaults to POST)
+  
+  ```ts
+  setInit: {
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`
+    }
+  }
+  ```
+</ParamField>
+
+<ParamField path="valueType" type="'arrayBuffer' | 'blob' | 'formData' | 'json' | 'text'" default="json">
+  How to parse GET response
+  
+  ```ts
+  valueType: 'json'  // response.json()
+  valueType: 'text'  // response.text()
+  valueType: 'blob'  // response.blob()
+  ```
+</ParamField>
+
+<ParamField path="onSavedValueType" type="'arrayBuffer' | 'blob' | 'formData' | 'json' | 'text'" default="json">
+  How to parse POST response (defaults to `valueType`)
+</ParamField>
+
+<ParamField path="onSaved" type="(params: SyncedFetchOnSavedParams) => Partial<TLocal> | void">
+  Called after successful save with server response
+  
+  ```ts
+  onSaved: ({ saved, input, currentValue }) => {
+    // Update with server response
+    return {
+      id: saved.id,
+      updatedAt: saved.updatedAt
+    }
+  }
+  ```
+</ParamField>
+
+<ParamField path="transform" type="SyncTransform<TLocal, TRemote>">
+  Transform data between local and remote formats
+</ParamField>
+
+<ParamField path="initial" type="TLocal">
+  Initial value before data loads
+</ParamField>
+
+<ParamField path="persist" type="PersistOptions">
+  Local persistence configuration
+</ParamField>
+
+## Return Value
+
+Returns a `Synced<TLocal>` observable.
+
+## Examples
+
+### Basic GET
+
+```ts
+import { syncedFetch } from '@legendapp/state/sync-plugins/fetch'
+
+const data$ = syncedFetch({
+  get: '/api/data',
+  initial: { items: [] }
+})
+
+// Automatically fetches on first access
+console.log(data$.get())
+```
+
+### GET with POST
+
+```ts
+const user$ = syncedFetch({
+  get: '/api/user',
+  set: '/api/user',
+  initial: { name: '', email: '' }
+})
+
+// GET from /api/user
+const user = user$.get()
+
+// POST to /api/user when changed
+user$.name.set('John')
+```
+
+### Dynamic URLs
+
+```ts
+import { observable } from '@legendapp/state'
+import { syncedFetch } from '@legendapp/state/sync-plugins/fetch'
+
+const userId$ = observable('123')
+
+const user$ = syncedFetch({
+  get: () => `/api/users/${userId$.get()}`,
+  set: () => `/api/users/${userId$.get()}`
+})
+
+// Fetches /api/users/123
+user$.get()
+
+// Switch user - automatically refetches
+userId$.set('456')
+```
+
+### With Authentication
+
+```ts
+const token$ = observable<string | null>(null)
+
+const profile$ = syncedFetch({
+  get: '/api/profile',
+  set: '/api/profile',
+  getInit: computed(() => ({
+    headers: {
+      'Authorization': `Bearer ${token$.get()}`
+    }
+  })),
+  setInit: computed(() => ({
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token$.get()}`
+    }
+  }))
+})
+```
+
+### With Transform
+
+```ts
+const data$ = syncedFetch({
+  get: '/api/data',
+  set: '/api/data',
+  transform: {
+    load: (remote) => ({
+      ...remote,
+      createdAt: new Date(remote.createdAt)
+    }),
+    save: (local) => ({
+      ...local,
+      createdAt: local.createdAt.toISOString()
+    })
+  }
+})
+```
+
+### Handle Server Response
+
+```ts
+const post$ = syncedFetch({
+  get: '/api/posts/123',
+  set: '/api/posts/123',
+  initial: { title: '', content: '', updatedAt: null },
+  onSaved: ({ saved }) => {
+    // Update with server timestamp
+    return {
+      updatedAt: saved.updatedAt
+    }
+  }
+})
+
+post$.title.set('New title')
+// POST to server
+// Server responds with { title: 'New title', updatedAt: '2024-03-01T10:00:00Z' }
+// updatedAt is merged into observable
+```
+
+### Different Response Types
+
+```ts
+// Text response
+const markdown$ = syncedFetch({
+  get: '/api/docs/readme.md',
+  valueType: 'text'
+})
+
+// Binary response
+const image$ = syncedFetch({
+  get: '/api/images/photo.jpg',
+  valueType: 'blob'
+})
+
+// Form data
+const form$ = syncedFetch({
+  get: '/api/form',
+  valueType: 'formData'
+})
+```
+
+### With Persistence
+
+```ts
+import { ObservablePersistLocalStorage } from '@legendapp/state/persist-plugins/local-storage'
+
+const settings$ = syncedFetch({
+  get: '/api/settings',
+  set: '/api/settings',
+  persist: {
+    name: 'settings',
+    plugin: ObservablePersistLocalStorage
+  }
+})
+
+// 1. Loads from localStorage (instant)
+// 2. Syncs with /api/settings in background
+// 3. Saves to both localStorage and server on changes
+```
+
+### Error Handling
+
+```ts
+const data$ = syncedFetch({
+  get: '/api/data',
+  set: '/api/data',
+  onError: (error, { source, type, retry }) => {
+    if (source === 'get') {
+      console.error('Failed to load:', error)
+      showNotification('Failed to load data')
+    } else if (source === 'set') {
+      console.error('Failed to save:', error)
+      showNotification('Failed to save changes')
+    }
+  }
+})
+```
+
+### Custom HTTP Methods
+
+```ts
+// PUT instead of POST
+const resource$ = syncedFetch({
+  get: '/api/resource/123',
+  set: '/api/resource/123',
+  setInit: {
+    method: 'PUT'
+  }
+})
+
+// PATCH for partial updates
+const user$ = syncedFetch({
+  get: '/api/user',
+  set: '/api/user',
+  setInit: {
+    method: 'PATCH'
+  }
+})
+```
+
+### Query Parameters
+
+```ts
+const filter$ = observable('active')
+
+const todos$ = syncedFetch({
+  get: () => {
+    const filter = filter$.get()
+    return `/api/todos?filter=${filter}`
+  }
+})
+
+// Fetches /api/todos?filter=active
+todos$.get()
+
+// Refetches with new filter
+filter$.set('completed')
+```
+
+### File Upload
+
+```ts
+const upload$ = syncedFetch({
+  set: '/api/upload',
+  setInit: {
+    method: 'POST'
+  }
+})
+
+// Upload file
+const formData = new FormData()
+formData.append('file', file)
+
+upload$.set(formData)
+```
+
+## Advanced Usage
+
+### Conditional Fetching
+
+```ts
+const isLoggedIn$ = observable(false)
+
+const userData$ = syncedFetch({
+  get: '/api/user/data',
+  waitFor: () => isLoggedIn$.get()
+})
+
+// Only fetches when logged in
+isLoggedIn$.set(true)
+```
+
+### Retry Configuration
+
+```ts
+const data$ = syncedFetch({
+  get: '/api/data',
+  set: '/api/data',
+  retry: {
+    infinite: true,
+    delay: 1000,
+    backoff: 'exponential',
+    maxDelay: 30000
+  }
+})
+```
+
+### Manual Sync
+
+```ts
+import { syncState } from '@legendapp/state/sync'
+
+const data$ = syncedFetch({
+  get: '/api/data',
+  syncMode: 'manual'
+})
+
+// Manually trigger sync
+const state = syncState(data$)
+await state.sync()
+```
+
+## Best Practices
+
+1. **Use for simple APIs**: Best for straightforward REST endpoints
+2. **Add authentication**: Include auth headers in `getInit`/`setInit`
+3. **Handle errors**: Implement `onError` for production apps
+4. **Use persistence**: Add local caching for better UX
+5. **Consider alternatives**: Use specialized plugins (Supabase, Firebase) for those services
+
+## When to Use
+
+**Use syncedFetch when:**
+- Working with simple REST APIs
+- Need basic GET/POST operations
+- Don't need real-time updates
+- Want minimal configuration
+
+**Use other plugins when:**
+- **Supabase/Firebase**: For those specific services
+- **TanStack Query**: For complex caching/invalidation
+- **Custom synced()**: For WebSocket/SSE or custom protocols
+
+## See Also
+
+- [Supabase Plugin](/api/sync-plugins/supabase) - Full-featured Supabase integration
+- [Firebase Plugin](/api/sync-plugins/firebase) - Firebase Realtime Database sync
+- [TanStack Query Plugin](/api/sync-plugins/tanstack-query) - Advanced caching
+- [synced()](/api/sync/synced) - Create custom sync logic

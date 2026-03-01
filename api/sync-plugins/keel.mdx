@@ -1,0 +1,464 @@
+---
+title: Keel Plugin
+description: Sync observables with Keel backend
+---
+
+The Keel plugin provides seamless integration with [Keel](https://keel.so/) backends, including CRUD operations, real-time sync, and automatic authentication handling.
+
+## Installation
+
+```bash
+npm install @legendapp/state @teamkeel/client-react
+```
+
+## Usage
+
+```ts
+import { syncedKeel } from '@legendapp/state/sync-plugins/keel'
+import { APIClient } from './keelClient'  // Generated Keel client
+
+const client = APIClient()
+
+const posts$ = syncedKeel({
+  client,
+  list: (params) => client.api.queries.listPosts(params),
+  create: (data) => client.api.mutations.createPost(data),
+  update: ({ where, values }) => client.api.mutations.updatePost({ where, values }),
+  delete: ({ id }) => client.api.mutations.deletePost({ id }),
+  as: 'object',
+  persist: {
+    name: 'posts',
+    plugin: ObservablePersistLocalStorage
+  }
+})
+```
+
+## Configuration
+
+### Single Item
+
+<ParamField path="get" type="(params: KeelGetParams) => Promise<APIResult<TRemote>>">
+  Function to fetch a single item
+  
+  ```ts
+  get: () => client.api.queries.getPost({ id: '123' })
+  ```
+</ParamField>
+
+### List of Items
+
+<ParamField path="list" type="(params: KeelListParams) => Promise<APIResult<{ results: TRemote[], pageInfo?: any }>>">
+  Function to fetch a list of items with pagination
+  
+  ```ts
+  list: (params) => client.api.queries.listPosts(params)
+  ```
+</ParamField>
+
+<ParamField path="where" type="Where | (() => Where)">
+  Filter conditions for list queries
+  
+  ```ts
+  where: { status: 'published' }
+  
+  // Dynamic
+  where: () => ({ authorId: currentUser$.id.get() })
+  ```
+</ParamField>
+
+<ParamField path="first" type="number">
+  Number of items to fetch (pagination limit)
+  
+  ```ts
+  first: 50  // Fetch first 50 items
+  ```
+</ParamField>
+
+### CRUD Operations
+
+<ParamField path="create" type="(input: Partial<TRemote>) => Promise<APIResult<TRemote>>">
+  Function to create items
+  
+  ```ts
+  create: (data) => client.api.mutations.createPost(data)
+  ```
+</ParamField>
+
+<ParamField path="update" type="(params: { where: any, values?: Partial<TRemote> }) => Promise<APIResult<TRemote>>">
+  Function to update items
+  
+  ```ts
+  update: ({ where, values }) => 
+    client.api.mutations.updatePost({ where, values })
+  ```
+</ParamField>
+
+<ParamField path="delete" type="(params: { id: string }) => Promise<APIResult<string>>">
+  Function to delete items
+  
+  ```ts
+  delete: ({ id }) => client.api.mutations.deletePost({ id })
+  ```
+</ParamField>
+
+### Configuration
+
+<ParamField path="client" type="KeelClient">
+  Keel API client instance
+</ParamField>
+
+<ParamField path="as" type="'object' | 'array' | 'Map'" default="object">
+  How to structure the data
+  - `object`: `{ [id]: item }`
+  - `array`: `[item, item]`
+  - `Map`: `Map<id, item>`
+</ParamField>
+
+<ParamField path="changesSince" type="'all' | 'last-sync'" default="all">
+  How to query for updates
+  - `all`: Fetch all data
+  - `last-sync`: Only fetch items updated since last sync
+</ParamField>
+
+<ParamField path="realtime" type="object">
+  Real-time sync configuration
+  
+  ```ts
+  realtime: {
+    path: (action, inputs) => `${action}:${JSON.stringify(inputs)}`,
+    plugin: keelRealtimePlugin
+  }
+  ```
+</ParamField>
+
+<ParamField path="refreshAuth" type="() => void | Promise<void>">
+  Function to refresh authentication
+</ParamField>
+
+<ParamField path="requireAuth" type="boolean" default="true">
+  Wait for authentication before syncing
+</ParamField>
+
+<ParamField path="fieldId" type="string" default="id">
+  Name of the ID field
+</ParamField>
+
+<ParamField path="fieldDeleted" type="string">
+  Field indicating soft deletion
+</ParamField>
+
+<ParamField path="transform" type="SyncTransform">
+  Transform data between local and remote formats
+</ParamField>
+
+<ParamField path="persist" type="PersistOptions">
+  Local persistence configuration
+</ParamField>
+
+## Examples
+
+### Basic List
+
+```ts
+import { syncedKeel } from '@legendapp/state/sync-plugins/keel'
+import { APIClient } from './keelClient'
+
+const client = APIClient()
+
+const posts$ = syncedKeel({
+  client,
+  list: (params) => client.api.queries.listPosts(params),
+  as: 'object'
+})
+
+// Access posts
+const posts = posts$.get()
+console.log(Object.values(posts))
+```
+
+### Full CRUD
+
+```ts
+interface Post {
+  id: string
+  title: string
+  content: string
+  authorId: string
+  createdAt: Date
+  updatedAt: Date
+}
+
+const posts$ = syncedKeel<Post>({
+  client,
+  list: (params) => client.api.queries.listPosts(params),
+  create: (data) => client.api.mutations.createPost(data),
+  update: ({ where, values }) => 
+    client.api.mutations.updatePost({ where, values }),
+  delete: ({ id }) => client.api.mutations.deletePost({ id }),
+  as: 'object'
+})
+
+// Create
+posts$['new-id'].set({
+  id: 'new-id',
+  title: 'New Post',
+  content: 'Content here',
+  authorId: 'user-123'
+})
+
+// Update
+posts$['post-1'].title.set('Updated Title')
+
+// Delete
+posts$['post-1'].delete()
+```
+
+### With Filtering
+
+```ts
+const currentUserId$ = observable('user-123')
+
+const myPosts$ = syncedKeel({
+  client,
+  list: (params) => client.api.queries.listPosts(params),
+  where: () => ({
+    authorId: currentUserId$.get()
+  }),
+  as: 'array'
+})
+
+// Only fetches posts by current user
+const posts = myPosts$.get()
+```
+
+### With Pagination
+
+```ts
+const posts$ = syncedKeel({
+  client,
+  list: (params) => client.api.queries.listPosts(params),
+  first: 20,  // Fetch 20 items per page
+  as: 'object'
+})
+
+// Automatically handles pagination
+// Fetches all pages up to 'first' limit
+```
+
+### Single Item
+
+```ts
+const post$ = syncedKeel({
+  client,
+  get: () => client.api.queries.getPost({ id: 'post-123' }),
+  update: ({ where, values }) => 
+    client.api.mutations.updatePost({ where, values })
+})
+
+// Returns single item (not object/array)
+const post = post$.get()
+console.log(post.title)
+```
+
+### With Authentication
+
+```ts
+const posts$ = syncedKeel({
+  client,
+  list: (params) => client.api.queries.listPosts(params),
+  requireAuth: true,
+  refreshAuth: async () => {
+    // Refresh token if expired
+    await client.auth.refresh()
+  }
+})
+
+// Waits for authentication before fetching
+```
+
+### Incremental Sync
+
+```ts
+const posts$ = syncedKeel({
+  client,
+  list: (params) => client.api.queries.listPosts(params),
+  changesSince: 'last-sync',  // Only fetch updates
+  persist: {
+    name: 'posts',
+    plugin: ObservablePersistLocalStorage,
+    retrySync: true
+  }
+})
+
+// First load: Fetches all posts
+// Subsequent loads: Only fetches posts updated since last sync
+// Uses updatedAt field automatically
+```
+
+### With Real-time
+
+```ts
+import { createKeelRealtimePlugin } from './keelRealtime'
+
+const realtimePlugin = createKeelRealtimePlugin()
+
+const posts$ = syncedKeel({
+  client,
+  list: (params) => client.api.queries.listPosts(params),
+  realtime: {
+    path: (action, inputs) => `posts:${JSON.stringify(inputs)}`,
+    plugin: realtimePlugin
+  }
+})
+
+// Automatically subscribes to real-time updates
+// Updates observable when data changes on server
+```
+
+### Soft Deletes
+
+```ts
+interface Post {
+  id: string
+  title: string
+  deleted: boolean
+}
+
+const posts$ = syncedKeel<Post>({
+  client,
+  list: (params) => client.api.queries.listPosts(params),
+  delete: ({ id }) => client.api.mutations.deletePost({ id }),
+  fieldDeleted: 'deleted',  // Use soft delete
+  as: 'object'
+})
+
+// Delete marks as deleted instead of removing
+posts$['post-1'].delete()
+// { id: 'post-1', deleted: true }
+```
+
+### With Transform
+
+```ts
+const posts$ = syncedKeel({
+  client,
+  list: (params) => client.api.queries.listPosts(params),
+  transform: {
+    load: (remote) => ({
+      ...remote,
+      createdAt: new Date(remote.createdAt),
+      updatedAt: new Date(remote.updatedAt)
+    }),
+    save: (local) => ({
+      ...local,
+      createdAt: local.createdAt.toISOString(),
+      updatedAt: local.updatedAt.toISOString()
+    })
+  }
+})
+```
+
+### Error Handling
+
+```ts
+const posts$ = syncedKeel({
+  client,
+  list: (params) => client.api.queries.listPosts(params),
+  create: (data) => client.api.mutations.createPost(data),
+  onError: (error, { source, action, retry }) => {
+    console.error(`Error in ${action}:`, error)
+    
+    if (source === 'create' && error.message.includes('duplicate')) {
+      // Handle duplicate error
+      showNotification('Item already exists')
+    } else {
+      showNotification(`Failed to ${source}`)
+    }
+  }
+})
+```
+
+### Multi-Tenant
+
+```ts
+const tenantId$ = observable('tenant-123')
+
+const data$ = syncedKeel({
+  client,
+  list: (params) => client.api.queries.listData(params),
+  where: () => ({
+    tenantId: tenantId$.get()
+  }),
+  persist: {
+    name: computed(() => `data-${tenantId$.get()}`)
+  }
+})
+
+// Switch tenant - automatically refetches and loads correct cache
+tenantId$.set('tenant-456')
+```
+
+## Built-in Features
+
+### Automatic Authentication
+
+- Waits for authentication before syncing
+- Automatically refreshes expired tokens
+- Retries failed requests after auth refresh
+
+### Pagination Handling
+
+- Automatically fetches all pages
+- Respects `first` parameter
+- Uses cursor-based pagination
+
+### Error Recovery
+
+- Handles duplicate creation errors
+- Handles "not found" deletion errors
+- Retries on network failures
+
+### Optimistic Updates
+
+- Changes update local state immediately
+- Syncs with server in background
+- Reverts on error (optional)
+
+## Type Safety
+
+Keel plugin has full TypeScript support:
+
+```ts
+import type { KeelObjectBase } from '@legendapp/state/sync-plugins/keel'
+
+interface Post extends KeelObjectBase {
+  title: string
+  content: string
+  authorId: string
+}
+
+const posts$ = syncedKeel<Post>({
+  client,
+  list: (params) => client.api.queries.listPosts(params),
+  // TypeScript knows the shape of Post
+})
+
+// Type-safe access
+posts$['post-1'].title.set('New Title')  // ✓
+posts$['post-1'].invalid.set('value')    // ✗ Error
+```
+
+## Best Practices
+
+1. **Use incremental sync**: Enable `changesSince: 'last-sync'` for better performance
+2. **Add persistence**: Cache data locally for offline support
+3. **Handle errors**: Implement `onError` for production apps
+4. **Enable real-time**: Use `realtime` for live updates
+5. **Filter at source**: Use `where` to reduce data transfer
+
+## See Also
+
+- [Supabase Plugin](/api/sync-plugins/supabase) - Similar features for Supabase
+- [Firebase Plugin](/api/sync-plugins/firebase) - Firebase integration
+- [synced()](/api/sync/synced) - Core sync functionality
+- [Keel Documentation](https://keel.so/docs) - Keel backend docs

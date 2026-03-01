@@ -1,0 +1,372 @@
+---
+title: React Native Setup
+description: Learn how to use Legend-State in React Native applications
+---
+
+Legend-State works seamlessly in React Native with full support for native components and optimized performance. This guide covers the setup and usage patterns specific to React Native.
+
+## Installation
+
+First, install Legend-State in your React Native project:
+
+```bash
+npm install @legendapp/state
+# or
+yarn add @legendapp/state
+# or
+bun add @legendapp/state
+```
+
+## Enabling React Native Components
+
+Legend-State provides reactive versions of React Native components through the `Reactive` interface. To enable these components, call `enableReactNativeComponents()` at the start of your app:
+
+```tsx
+import { enableReactNativeComponents } from '@legendapp/state/config/enableReactNativeComponents';
+
+// Call this once at the beginning of your app
+enableReactNativeComponents();
+```
+
+<Info>
+In v3, this configuration step is still available but will be deprecated. The reactive components system is being simplified.
+</Info>
+
+## Available Reactive Components
+
+Once enabled, you can use reactive versions of these React Native components:
+
+- `ActivityIndicator`
+- `Button`
+- `FlatList`
+- `Image`
+- `Pressable`
+- `ScrollView`
+- `SectionList`
+- `Switch`
+- `Text`
+- `TextInput`
+- `TouchableWithoutFeedback`
+- `View`
+
+## Using Reactive Components
+
+Reactive components accept observables directly as props (prefixed with `$`):
+
+```tsx
+import { observable } from '@legendapp/state';
+import { Reactive } from '@legendapp/state/react';
+
+const state$ = observable({
+  name: 'John',
+  count: 0,
+  isEnabled: false,
+});
+
+function MyComponent() {
+  return (
+    <Reactive.View>
+      {/* Text updates automatically when state$.name changes */}
+      <Reactive.Text $text={state$.name} />
+      
+      {/* Button updates when count changes */}
+      <Reactive.Button
+        $title={() => `Count: ${state$.count.get()}`}
+        onPress={() => state$.count.set(c => c + 1)}
+      />
+      
+      {/* Two-way binding with TextInput */}
+      <Reactive.TextInput $value={state$.name} />
+      
+      {/* Two-way binding with Switch */}
+      <Reactive.Switch $value={state$.isEnabled} />
+    </Reactive.View>
+  );
+}
+```
+
+## Two-Way Bindings
+
+Legend-State provides automatic two-way bindings for form controls:
+
+### TextInput
+
+```tsx
+import { observable } from '@legendapp/state';
+import { Reactive } from '@legendapp/state/react';
+
+const form$ = observable({ email: '', password: '' });
+
+function LoginForm() {
+  return (
+    <>
+      <Reactive.TextInput
+        $value={form$.email}
+        placeholder="Email"
+        autoCapitalize="none"
+      />
+      <Reactive.TextInput
+        $value={form$.password}
+        placeholder="Password"
+        secureTextEntry
+      />
+    </>
+  );
+}
+```
+
+The binding configuration:
+- **Handler**: `onChange`
+- **Value extraction**: `e.nativeEvent.text`
+- **Default value**: `''` (empty string)
+
+### Switch
+
+```tsx
+const settings$ = observable({
+  notifications: true,
+  darkMode: false,
+});
+
+function Settings() {
+  return (
+    <>
+      <Reactive.Switch $value={settings$.notifications} />
+      <Reactive.Switch $value={settings$.darkMode} />
+    </>
+  );
+}
+```
+
+The binding configuration:
+- **Handler**: `onValueChange`
+- **Value extraction**: Direct event value
+- **Default value**: `false`
+
+## FlatList Optimization
+
+Legend-State provides special handling for `FlatList` to ensure efficient re-renders:
+
+```tsx
+import { observable } from '@legendapp/state';
+import { Reactive } from '@legendapp/state/react';
+
+const items$ = observable([
+  { id: '1', name: 'Item 1' },
+  { id: '2', name: 'Item 2' },
+  { id: '3', name: 'Item 3' },
+]);
+
+function MyList() {
+  return (
+    <Reactive.FlatList
+      $data={items$}
+      keyExtractor={(item) => item.id}
+      renderItem={({ item }) => (
+        <Reactive.Text $text={() => item.name} />
+      )}
+    />
+  );
+}
+```
+
+<Accordion title="How FlatList optimization works">
+  Legend-State tracks shallow changes to the array and automatically updates the `extraData` prop to trigger re-renders only when necessary. This is done by:
+  
+  1. Using `useSelector` to track the array with shallow comparison (`get(true)`)
+  2. Incrementing a render counter whenever the array changes
+  3. Setting `extraData` to the render counter
+  
+  This ensures that FlatList re-renders when items are added, removed, or reordered, without unnecessary re-renders.
+</Accordion>
+
+## Using with observer
+
+For components that need to track multiple observables, use the `observer` HOC:
+
+```tsx
+import { observable } from '@legendapp/state';
+import { observer } from '@legendapp/state/react';
+import { View, Text, Button } from 'react-native';
+
+const state$ = observable({
+  count: 0,
+  name: 'React Native App',
+});
+
+const Counter = observer(function Counter() {
+  // Component automatically re-renders when accessed observables change
+  const count = state$.count.get();
+  const name = state$.name.get();
+  
+  return (
+    <View>
+      <Text>{name}</Text>
+      <Text>Count: {count}</Text>
+      <Button
+        title="Increment"
+        onPress={() => state$.count.set(c => c + 1)}
+      />
+    </View>
+  );
+});
+```
+
+## Performance Tips
+
+<Steps>
+  <Step title="Use fine-grained reactivity">
+    Prefer reactive components over observer when possible. This minimizes re-renders:
+    
+    ```tsx
+    // Good: Only the Text re-renders
+    <Reactive.Text $text={state$.name} />
+    
+    // Less optimal: Entire component re-renders
+    const name = state$.name.get();
+    ```
+  </Step>
+  
+  <Step title="Leverage two-way bindings">
+    Use `$value` props for form inputs to avoid manual event handlers:
+    
+    ```tsx
+    // Good: Automatic two-way binding
+    <Reactive.TextInput $value={state$.email} />
+    
+    // Less optimal: Manual handling
+    <TextInput
+      value={state$.email.get()}
+      onChangeText={(text) => state$.email.set(text)}
+    />
+    ```
+  </Step>
+  
+  <Step title="Use shallow tracking for lists">
+    For large lists, use shallow tracking to avoid tracking individual items:
+    
+    ```tsx
+    // The list only re-renders when items are added/removed
+    <Reactive.FlatList $data={items$} />
+    ```
+  </Step>
+</Steps>
+
+## Common Patterns
+
+### Form Handling
+
+```tsx
+import { observable } from '@legendapp/state';
+import { observer } from '@legendapp/state/react';
+import { Reactive } from '@legendapp/state/react';
+import { View, Button } from 'react-native';
+
+const form$ = observable({
+  firstName: '',
+  lastName: '',
+  email: '',
+  subscribe: false,
+});
+
+const SignupForm = observer(function SignupForm() {
+  const handleSubmit = () => {
+    const data = form$.get();
+    console.log('Form data:', data);
+    // Submit to API...
+  };
+  
+  return (
+    <View>
+      <Reactive.TextInput
+        $value={form$.firstName}
+        placeholder="First Name"
+      />
+      <Reactive.TextInput
+        $value={form$.lastName}
+        placeholder="Last Name"
+      />
+      <Reactive.TextInput
+        $value={form$.email}
+        placeholder="Email"
+        keyboardType="email-address"
+      />
+      <Reactive.Switch $value={form$.subscribe} />
+      <Button title="Sign Up" onPress={handleSubmit} />
+    </View>
+  );
+});
+```
+
+### Dynamic Lists
+
+```tsx
+import { observable } from '@legendapp/state';
+import { Reactive } from '@legendapp/state/react';
+
+const todos$ = observable([
+  { id: 1, text: 'Learn Legend-State', done: false },
+  { id: 2, text: 'Build React Native app', done: false },
+]);
+
+function TodoList() {
+  const addTodo = (text: string) => {
+    todos$.set(todos => [
+      ...todos,
+      { id: Date.now(), text, done: false },
+    ]);
+  };
+  
+  return (
+    <Reactive.FlatList
+      $data={todos$}
+      keyExtractor={(item) => item.id.toString()}
+      renderItem={({ item, index }) => (
+        <Reactive.View>
+          <Reactive.Text $text={() => item.text} />
+          <Reactive.Switch
+            $value={todos$[index].done}
+          />
+        </Reactive.View>
+      )}
+    />
+  );
+}
+```
+
+## Troubleshooting
+
+<Warning>
+  **V3 Migration**: The `enableReactNativeComponents()` function is marked as TODOV3 for removal. In future versions, the reactive components system will be simplified. Check the [migration guide](/guides/migration-v3) for updates.
+</Warning>
+
+### Common Issues
+
+<Accordion title="TextInput not updating">
+  Make sure you're using the `$value` prop (not `value`) and that you've called `enableReactNativeComponents()` at the start of your app.
+  
+  ```tsx
+  // Wrong
+  <Reactive.TextInput value={state$.text} />
+  
+  // Correct
+  <Reactive.TextInput $value={state$.text} />
+  ```
+</Accordion>
+
+<Accordion title="FlatList not re-rendering">
+  Use the `$data` prop instead of `data`, and ensure your items have stable keys:
+  
+  ```tsx
+  <Reactive.FlatList
+    $data={items$}
+    keyExtractor={(item) => item.id}
+  />
+  ```
+</Accordion>
+
+## Next Steps
+
+- Learn about [Performance Optimization](/guides/performance)
+- Explore [TypeScript usage](/guides/typescript)
+- Check the [Migration Guide](/guides/migration-v3) for v3 changes

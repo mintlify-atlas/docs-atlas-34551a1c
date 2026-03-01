@@ -1,0 +1,747 @@
+---
+title: "Remote Sync Plugins"
+description: "Sync observable state with backend services using pre-built plugins"
+---
+
+Legend-State provides sync plugins for popular backend services, making it easy to build local-first apps with automatic bi-directional synchronization.
+
+## Available Plugins
+
+### syncedKeel
+
+Sync with [Keel](https://keel.so) backend:
+
+```ts
+import { syncedKeel } from '@legendapp/state/sync-plugins/keel'
+import { observable } from '@legendapp/state'
+
+const users$ = observable(syncedKeel({
+  list: queries.listUsers,
+  create: mutations.createUser,
+  update: mutations.updateUser,
+  delete: mutations.deleteUser,
+  persist: { name: 'users', retrySync: true },
+  changesSince: 'last-sync'
+}))
+```
+
+### syncedSupabase
+
+Sync with [Supabase](https://supabase.com) PostgreSQL database:
+
+```ts
+import { syncedSupabase } from '@legendapp/state/sync-plugins/supabase'
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(url, key)
+
+const posts$ = observable(syncedSupabase({
+  supabase,
+  collection: 'posts',
+  filter: (select) => select.eq('published', true),
+  realtime: true,
+  persist: { name: 'posts', retrySync: true }
+}))
+```
+
+### syncedFirebase
+
+Sync with Firebase Realtime Database:
+
+```ts
+import { syncedFirebase } from '@legendapp/state/sync-plugins/firebase'
+
+const data$ = observable(syncedFirebase({
+  refPath: (uid) => `users/${uid}/data`,
+  realtime: true,
+  fieldId: 'id',
+  persist: { name: 'userData', retrySync: true }
+}))
+```
+
+### syncedCrud
+
+Generic CRUD operations for custom backends:
+
+```ts
+import { syncedCrud } from '@legendapp/state/sync-plugins/crud'
+
+const items$ = observable(syncedCrud({
+  list: async () => {
+    const res = await fetch('/api/items')
+    return res.json()
+  },
+  create: async (item) => {
+    const res = await fetch('/api/items', {
+      method: 'POST',
+      body: JSON.stringify(item)
+    })
+    return res.json()
+  },
+  update: async (item) => {
+    const res = await fetch(`/api/items/${item.id}`, {
+      method: 'PUT',
+      body: JSON.stringify(item)
+    })
+    return res.json()
+  },
+  delete: async (item) => {
+    await fetch(`/api/items/${item.id}`, { method: 'DELETE' })
+  },
+  as: 'object',
+  persist: { name: 'items', retrySync: true }
+}))
+```
+
+## Keel Plugin
+
+### Basic Setup
+
+```ts
+import { syncedKeel } from '@legendapp/state/sync-plugins/keel'
+import { queries, mutations } from './keelClient'
+
+interface User {
+  id: string
+  name: string
+  email: string
+  createdAt: Date
+  updatedAt: Date
+}
+
+const users$ = observable(syncedKeel<User>({
+  list: queries.listUsers,
+  create: mutations.createUser,
+  update: mutations.updateUser,
+  delete: mutations.deleteUser,
+  client: keelClient, // Optional: Keel client instance
+  persist: { name: 'users', retrySync: true },
+  changesSince: 'last-sync'
+}))
+```
+
+### Configuration Options
+
+```ts
+syncedKeel({
+  // CRUD operations
+  list: queries.listUsers, // Query to list items
+  create: mutations.createUser, // Create mutation
+  update: mutations.updateUser, // Update mutation
+  delete: mutations.deleteUser, // Delete mutation
+  
+  // Keel client
+  client: keelClient,
+  
+  // Query filtering
+  where: { status: 'active' }, // Filter query
+  first: 100, // Limit results
+  
+  // Auth
+  requireAuth: true, // Wait for authentication
+  refreshAuth: async () => {
+    // Custom auth refresh logic
+  },
+  
+  // Realtime updates
+  realtime: {
+    plugin: keelRealtimePlugin,
+    path: (action, inputs) => `/realtime/${action}`
+  },
+  
+  // Data shape
+  as: 'object', // 'object' | 'Map' | 'array'
+  
+  // Sync behavior
+  changesSince: 'last-sync',
+  persist: { name: 'users', retrySync: true },
+  retry: { infinite: true }
+})
+```
+
+### Keel-Specific Features
+
+#### Automatic Field Mapping
+
+Keel objects have built-in timestamp fields:
+
+```ts
+interface KeelObject {
+  id: string
+  createdAt: Date
+  updatedAt: Date
+}
+```
+
+These are automatically used for `changesSince: 'last-sync'`.
+
+#### Dynamic Filtering
+
+```ts
+const filter$ = observable({ status: 'active' })
+
+const users$ = observable(syncedKeel({
+  list: queries.listUsers,
+  where: () => filter$.get(), // Dynamic filter
+  persist: { name: 'users' }
+}))
+
+// Update filter triggers re-fetch
+filter$.status.set('inactive')
+```
+
+#### Authentication
+
+```ts
+syncedKeel({
+  client: keelClient,
+  requireAuth: true, // Don't sync until authenticated
+  refreshAuth: async () => {
+    // Refresh auth token
+    await keelClient.auth.refresh()
+  }
+})
+```
+
+## Supabase Plugin
+
+### Basic Setup
+
+```ts
+import { syncedSupabase } from '@legendapp/state/sync-plugins/supabase'
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_KEY
+)
+
+const posts$ = observable(syncedSupabase({
+  supabase,
+  collection: 'posts',
+  persist: { name: 'posts', retrySync: true }
+}))
+```
+
+### Configuration Options
+
+```ts
+syncedSupabase({
+  // Required
+  supabase: supabaseClient,
+  collection: 'posts',
+  
+  // Query options
+  select: (query) => query.select('id, title, content, author(name)'),
+  filter: (select, params) => {
+    return select
+      .eq('published', true)
+      .order('created_at', { ascending: false })
+  },
+  schema: 'public', // Database schema
+  
+  // Realtime subscriptions
+  realtime: true,
+  // Or configure:
+  realtime: {
+    schema: 'public',
+    filter: 'user_id=eq.123'
+  },
+  
+  // CRUD actions (optional, auto-generated if not provided)
+  actions: ['create', 'read', 'update', 'delete'],
+  
+  // Custom CRUD functions
+  list: async (params) => {
+    return supabase.from('posts').select()
+  },
+  create: async (item, params) => {
+    return supabase.from('posts').insert(item).select()
+  },
+  
+  // Data shape
+  as: 'object',
+  
+  // Timestamps
+  fieldCreatedAt: 'created_at',
+  fieldUpdatedAt: 'updated_at',
+  fieldDeleted: 'deleted_at', // Soft delete field
+  
+  // Transform dates
+  stringifyDates: true,
+  
+  // Sync behavior  
+  changesSince: 'last-sync',
+  persist: { name: 'posts', retrySync: true }
+})
+```
+
+### Supabase-Specific Features
+
+#### Realtime Subscriptions
+
+Automatic updates from database changes:
+
+```ts
+const messages$ = observable(syncedSupabase({
+  supabase,
+  collection: 'messages',
+  realtime: true, // Subscribe to changes
+  filter: (select) => select.eq('room_id', roomId),
+  persist: { name: 'messages' }
+}))
+
+// messages$ automatically updates when database changes
+```
+
+#### Custom Select with Joins
+
+```ts
+const posts$ = observable(syncedSupabase({
+  supabase,
+  collection: 'posts',
+  select: (query) => query.select(`
+    id,
+    title,
+    content,
+    author:profiles(name, avatar),
+    comments(id, text)
+  `)
+}))
+```
+
+#### Row Level Security
+
+Supabase RLS automatically enforced:
+
+```ts
+// Only fetches rows user has access to
+const userPosts$ = observable(syncedSupabase({
+  supabase, // Authenticated client
+  collection: 'posts',
+  filter: (select) => select.eq('user_id', userId)
+}))
+```
+
+#### Soft Deletes
+
+```ts
+const posts$ = observable(syncedSupabase({
+  supabase,
+  collection: 'posts',
+  fieldDeleted: 'deleted_at', // Uses UPDATE instead of DELETE
+  changesSince: 'last-sync'
+}))
+
+// Sets deleted_at timestamp instead of deleting row
+delete posts$['post-123']
+```
+
+## Firebase Plugin
+
+### Basic Setup
+
+```ts
+import { syncedFirebase } from '@legendapp/state/sync-plugins/firebase'
+import { getAuth } from 'firebase/auth'
+
+const userData$ = observable(syncedFirebase({
+  refPath: (uid) => `users/${uid}/data`,
+  realtime: true,
+  requireAuth: true,
+  persist: { name: 'userData', retrySync: true }
+}))
+```
+
+### Configuration Options
+
+```ts
+syncedFirebase({
+  // Required: Path to Firebase data
+  refPath: (uid) => `users/${uid}/todos`,
+  
+  // Optional: Custom query
+  query: (ref) => orderByChild(ref, 'priority'),
+  
+  // Data structure
+  as: 'object', // 'object' | 'Map' | 'array' | 'value'
+  fieldId: 'id',
+  
+  // Realtime updates
+  realtime: true,
+  
+  // Auth
+  requireAuth: true,
+  
+  // Read-only mode
+  readonly: false,
+  
+  // Field transformations
+  fieldTransforms: {
+    createdAt: 'created_at',
+    updatedAt: 'updated_at'
+  },
+  
+  // Timestamps
+  fieldCreatedAt: 'createdAt',
+  fieldUpdatedAt: 'updatedAt',
+  
+  // Sync behavior
+  changesSince: 'last-sync',
+  persist: { name: 'todos', retrySync: true }
+})
+```
+
+### Firebase-Specific Features
+
+#### Server Timestamps
+
+```ts
+import { serverTimestamp } from 'firebase/database'
+
+const todos$ = observable(syncedFirebase({
+  refPath: (uid) => `users/${uid}/todos`,
+  fieldUpdatedAt: 'updatedAt',
+  realtime: true
+}))
+
+// Server timestamp automatically added
+todos$['todo-1'].set({ text: 'Buy milk', updatedAt: serverTimestamp() })
+```
+
+#### Authentication Integration
+
+```ts
+import { onAuthStateChanged, getAuth } from 'firebase/auth'
+
+// Automatically switches user data
+const userData$ = observable(syncedFirebase({
+  refPath: (uid) => `users/${uid}/data`,
+  requireAuth: true // Waits for authentication
+}))
+
+// refPath automatically receives current user's UID
+```
+
+#### Queries
+
+```ts
+import { orderByChild, startAt, limitToFirst } from 'firebase/database'
+
+const topPosts$ = observable(syncedFirebase({
+  refPath: () => 'posts',
+  query: (ref) => {
+    return query(
+      ref,
+      orderByChild('score'),
+      startAt(100),
+      limitToFirst(10)
+    )
+  },
+  as: 'array'
+}))
+```
+
+## CRUD Plugin
+
+Generic plugin for custom REST APIs:
+
+### Basic Setup
+
+```ts
+import { syncedCrud } from '@legendapp/state/sync-plugins/crud'
+
+interface Todo {
+  id: string
+  text: string
+  completed: boolean
+}
+
+const todos$ = observable(syncedCrud<Todo>({
+  list: async () => {
+    const res = await fetch('/api/todos')
+    return res.json()
+  },
+  create: async (todo) => {
+    const res = await fetch('/api/todos', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(todo)
+    })
+    return res.json()
+  },
+  update: async (todo) => {
+    const res = await fetch(`/api/todos/${todo.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(todo)
+    })
+    return res.json()
+  },
+  delete: async (todo) => {
+    await fetch(`/api/todos/${todo.id}`, { method: 'DELETE' })
+  },
+  as: 'object',
+  persist: { name: 'todos', retrySync: true }
+}))
+```
+
+### Configuration Options
+
+```ts
+syncedCrud({
+  // Read operations
+  list: async (params) => Todo[], // Fetch all items
+  get: async (params) => Todo,   // Fetch single item (as: 'value')
+  
+  // Write operations  
+  create: async (item, params) => Todo,
+  update: async (item, params) => Todo,
+  delete: async (item, params) => void,
+  
+  // Data structure
+  as: 'object', // 'object' | 'Map' | 'array' | 'value'
+  
+  // ID field
+  fieldId: 'id',
+  generateId: () => crypto.randomUUID(),
+  
+  // Timestamps for incremental sync
+  fieldCreatedAt: 'createdAt',
+  fieldUpdatedAt: 'updatedAt',
+  fieldDeleted: 'isDeleted', // Soft delete
+  
+  // Partial updates
+  updatePartial: true, // Send only changed fields
+  
+  // Incremental sync
+  changesSince: 'last-sync',
+  
+  // Subscriptions
+  subscribe: (params) => {
+    // Set up realtime updates
+    return () => {} // Cleanup
+  },
+  
+  // Lifecycle
+  onSaved: ({ saved, input, currentValue, isCreate }) => {
+    // Called after successful save
+  },
+  
+  // Sync behavior
+  persist: { name: 'items', retrySync: true },
+  retry: { infinite: true },
+  debounceSet: 500
+})
+```
+
+### CRUD Features
+
+#### Automatic CRUD Detection
+
+The plugin automatically detects create vs update:
+
+```ts
+const todos$ = observable(syncedCrud({
+  create: async (todo) => createTodo(todo),
+  update: async (todo) => updateTodo(todo)
+}))
+
+// Automatically calls create (no createdAt field)
+todos$['new-id'].set({ text: 'New todo' })
+
+// Automatically calls update (has createdAt)
+todos$['existing-id'].text.set('Updated')
+```
+
+#### Partial Updates
+
+```ts
+const users$ = observable(syncedCrud({
+  updatePartial: true, // Only send changed fields
+  update: async (changes) => {
+    // changes only contains modified fields
+    return updateUser(changes)
+  }
+}))
+
+// Only sends { name: 'Alice' }
+users$['user-123'].name.set('Alice')
+```
+
+#### Response Merging
+
+```ts
+const items$ = observable(syncedCrud({
+  create: async (item) => {
+    const response = await api.create(item)
+    // Server may add fields like timestamps
+    return response // { ...item, createdAt, updatedAt }
+  },
+  onSaved: ({ saved, input, currentValue }) => {
+    // saved: server response
+    // input: what was sent
+    // currentValue: current local value
+    
+    // Can transform before merging
+    return { ...saved, localField: 'value' }
+  }
+}))
+```
+
+### Data Shapes
+
+The `as` option controls the data structure:
+
+#### As Object (default)
+
+```ts
+const items$ = observable(syncedCrud({
+  as: 'object',
+  list: async () => [{ id: '1', name: 'A' }, { id: '2', name: 'B' }]
+}))
+
+// Stored as: { '1': { id: '1', name: 'A' }, '2': { id: '2', name: 'B' } }
+items$['1'].name.get() // 'A'
+```
+
+#### As Map
+
+```ts
+const items$ = observable(syncedCrud({
+  as: 'Map',
+  list: async () => [{ id: '1', name: 'A' }]
+}))
+
+// Stored as: Map { '1' => { id: '1', name: 'A' } }
+items$.get().get('1') // { id: '1', name: 'A' }
+```
+
+#### As Array
+
+```ts
+const items$ = observable(syncedCrud({
+  as: 'array',
+  list: async () => [{ id: '1', name: 'A' }]
+}))
+
+// Stored as: [{ id: '1', name: 'A' }]
+items$[0].name.get() // 'A'
+```
+
+#### As Value
+
+```ts
+const user$ = observable(syncedCrud({
+  as: 'value',
+  get: async () => ({ id: '1', name: 'Alice' })
+}))
+
+// Stored as single value
+user$.name.get() // 'Alice'
+```
+
+## Fetch Plugin
+
+Simple fetch-based sync for GET requests:
+
+```ts
+import { syncedFetch } from '@legendapp/state/sync-plugins/fetch'
+
+const data$ = observable(syncedFetch({
+  get: 'https://api.example.com/data',
+  persist: { name: 'apiData' }
+}))
+```
+
+## TanStack Query Plugin
+
+Integration with TanStack Query (React Query):
+
+```ts
+import { syncedTanstack } from '@legendapp/state/sync-plugins/tanstack-query'
+import { useQuery } from '@tanstack/react-query'
+
+const data$ = observable(syncedTanstack({
+  queryKey: ['todos'],
+  queryFn: async () => {
+    const res = await fetch('/api/todos')
+    return res.json()
+  },
+  persist: { name: 'todos' }
+}))
+```
+
+## Common Patterns
+
+### Incremental Sync
+
+Only fetch changes since last sync:
+
+```ts
+const data$ = observable(syncedCrud({
+  changesSince: 'last-sync',
+  fieldUpdatedAt: 'updatedAt',
+  list: async ({ lastSync }) => {
+    const url = lastSync
+      ? `/api/items?since=${lastSync}`
+      : '/api/items'
+    const res = await fetch(url)
+    return res.json()
+  },
+  mode: 'merge' // Merge new data with existing
+}))
+```
+
+### Authenticated Requests
+
+```ts
+const authToken$ = observable('')
+
+const data$ = observable(syncedCrud({
+  waitFor: () => authToken$.get(), // Wait for auth
+  list: async () => {
+    const res = await fetch('/api/data', {
+      headers: { Authorization: `Bearer ${authToken$.get()}` }
+    })
+    return res.json()
+  }
+}))
+```
+
+### Pagination
+
+```ts
+const page$ = observable(1)
+const items$ = observable(syncedCrud({
+  list: async () => {
+    const res = await fetch(`/api/items?page=${page$.get()}`)
+    return res.json()
+  }
+}))
+
+// Load next page
+page$.set(p => p + 1)
+```
+
+### Real-time Updates
+
+```ts
+const messages$ = observable(syncedCrud({
+  list: async () => fetchMessages(),
+  subscribe: ({ update }) => {
+    const ws = new WebSocket('wss://api.example.com')
+    ws.onmessage = (event) => {
+      const message = JSON.parse(event.data)
+      update({ value: [message], mode: 'append' })
+    }
+    return () => ws.close()
+  }
+}))
+```
+
+## See Also
+
+- [synced() Function](/sync/synced) - Core sync API
+- [Local Persistence](/sync/local-persistence) - Cache configuration
+- [Conflict Resolution](/sync/conflict-resolution) - Handle conflicts

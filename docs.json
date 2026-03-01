@@ -1,122 +1,173 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mint Starter Kit",
+  "name": "Legend-State",
+  "theme": "palm",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#8B5CF6",
+    "light": "#A78BFA",
+    "dark": "#7C3AED"
   },
-  "favicon": "/favicon.svg",
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/LegendApp/legend-state"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/LegendApp/legend-state"
+    }
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Guides",
+        "tab": "Documentation",
         "groups": [
           {
-            "group": "Getting started",
+            "group": "Getting Started",
             "pages": [
-              "index",
-              "quickstart",
-              "development"
+              "introduction",
+              "installation",
+              "quickstart"
             ]
           },
           {
-            "group": "Customization",
+            "group": "Core Concepts",
             "pages": [
-              "essentials/settings",
-              "essentials/navigation"
+              "core/observables",
+              "core/getting-and-setting",
+              "core/observing-changes",
+              "core/computed-observables",
+              "core/batching"
             ]
           },
           {
-            "group": "Writing content",
+            "group": "React Integration",
             "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
+              "react/overview",
+              "react/hooks",
+              "react/observer",
+              "react/reactive-components",
+              "react/fine-grained-rendering"
             ]
           },
           {
-            "group": "AI tools",
+            "group": "Persistence & Sync",
             "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
+              "sync/overview",
+              "sync/synced",
+              "sync/local-persistence",
+              "sync/remote-sync",
+              "sync/conflict-resolution"
+            ]
+          },
+          {
+            "group": "Advanced Features",
+            "pages": [
+              "advanced/linked-observables",
+              "advanced/middleware",
+              "advanced/when",
+              "advanced/proxy",
+              "advanced/undo-redo"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/react-native",
+              "guides/performance",
+              "guides/typescript",
+              "guides/migration-v3"
             ]
           }
         ]
       },
       {
-        "tab": "API reference",
+        "tab": "API Reference",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "Core API",
             "pages": [
-              "api-reference/introduction"
+              "api/observable",
+              "api/observe",
+              "api/computed",
+              "api/batch",
+              "api/when"
             ]
           },
           {
-            "group": "Endpoint examples",
+            "group": "React Hooks",
             "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
+              "api/react/use-observable",
+              "api/react/use-selector",
+              "api/react/use-observe",
+              "api/react/use-computed",
+              "api/react/observer"
+            ]
+          },
+          {
+            "group": "React Components",
+            "pages": [
+              "api/react/memo",
+              "api/react/show",
+              "api/react/for",
+              "api/react/switch",
+              "api/react/reactive"
+            ]
+          },
+          {
+            "group": "Sync & Persistence",
+            "pages": [
+              "api/sync/synced",
+              "api/sync/sync-observable",
+              "api/sync/configure"
+            ]
+          },
+          {
+            "group": "Persist Plugins",
+            "pages": [
+              "api/persist-plugins/local-storage",
+              "api/persist-plugins/indexeddb",
+              "api/persist-plugins/async-storage",
+              "api/persist-plugins/mmkv"
+            ]
+          },
+          {
+            "group": "Sync Plugins",
+            "pages": [
+              "api/sync-plugins/keel",
+              "api/sync-plugins/supabase",
+              "api/sync-plugins/tanstack-query",
+              "api/sync-plugins/fetch",
+              "api/sync-plugins/firebase"
+            ]
+          },
+          {
+            "group": "Helpers",
+            "pages": [
+              "api/helpers/type-transformers",
+              "api/helpers/track-history",
+              "api/helpers/undo-redo",
+              "api/helpers/time"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "api/config/configure-legend-state",
+              "api/config/enable-react-tracking",
+              "api/config/enable-react-components"
+            ]
+          },
+          {
+            "group": "Trace & Debug",
+            "pages": [
+              "api/trace/use-trace-listeners",
+              "api/trace/use-trace-updates"
             ]
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
-  "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
-    "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
-    }
-  },
-  "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
-  },
-  "footer": {
-    "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
-    }
+    ]
   }
 }

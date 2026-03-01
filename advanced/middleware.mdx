@@ -1,0 +1,346 @@
+---
+title: Middleware
+description: Extend Legend-State behavior with the middleware system
+---
+
+The middleware system allows you to hook into Legend-State's internal events, particularly listener lifecycle events. This enables advanced use cases like debugging, performance monitoring, and custom synchronization logic.
+
+## Overview
+
+Middleware handlers receive events when:
+- A listener is added to an observable
+- A listener is removed from an observable  
+- All listeners are cleared from an observable
+
+Events are batched and processed in microtasks for optimal performance.
+
+## Type Signatures
+
+```typescript
+type MiddlewareEventType = 
+  | 'listener-added' 
+  | 'listener-removed' 
+  | 'listeners-cleared';
+
+interface MiddlewareEvent {
+  type: MiddlewareEventType;
+  node: NodeInfo;
+  listener?: NodeListener;
+  timestamp: number;
+}
+
+type MiddlewareHandler = (event: MiddlewareEvent) => void;
+
+function registerMiddleware(
+  node: NodeInfo,
+  type: MiddlewareEventType,
+  handler: MiddlewareHandler
+): () => void;
+```
+
+## Basic Usage
+
+```typescript
+import { observable, getNode } from '@legendapp/state';
+import { registerMiddleware } from '@legendapp/state/middleware';
+
+const count$ = observable(0);
+const node = getNode(count$);
+
+// Register a middleware handler
+const unregister = registerMiddleware(
+  node,
+  'listener-added',
+  (event) => {
+    console.log('Listener added at', event.timestamp);
+    console.log('Event type:', event.type);
+  }
+);
+
+// Add a listener to trigger the middleware
+count$.onChange(() => {
+  console.log('Count changed');
+});
+
+// Clean up when done
+unregister();
+```
+
+## Event Types
+
+### listener-added
+
+Fired when a listener is added to an observable:
+
+```typescript
+const store$ = observable({ count: 0 });
+const countNode = getNode(store$.count);
+
+registerMiddleware(countNode, 'listener-added', (event) => {
+  console.log('New listener added');
+  console.log('Node:', event.node);
+  console.log('Listener:', event.listener);
+});
+
+store$.count.onChange(() => {
+  // Middleware handler is called
+});
+```
+
+### listener-removed
+
+Fired when a listener is removed from an observable:
+
+```typescript
+registerMiddleware(countNode, 'listener-removed', (event) => {
+  console.log('Listener removed at', event.timestamp);
+});
+
+const dispose = store$.count.onChange(() => {});
+dispose(); // Triggers middleware
+```
+
+### listeners-cleared
+
+Fired when all listeners are cleared from an observable:
+
+```typescript
+registerMiddleware(countNode, 'listeners-cleared', (event) => {
+  console.log('All listeners cleared');
+  console.log('No more listeners on this node');
+});
+
+const dispose1 = store$.count.onChange(() => {});
+const dispose2 = store$.count.onChange(() => {});
+
+dispose1();
+// listeners-cleared not fired yet
+
+dispose2();
+// listeners-cleared is fired now
+```
+
+## Multiple Handlers
+
+You can register multiple handlers for the same event type:
+
+```typescript
+const handler1 = (event) => console.log('Handler 1:', event.type);
+const handler2 = (event) => console.log('Handler 2:', event.type);
+
+const unregister1 = registerMiddleware(node, 'listener-added', handler1);
+const unregister2 = registerMiddleware(node, 'listener-added', handler2);
+
+// Both handlers will be called
+store$.count.onChange(() => {});
+```
+
+## Event Batching
+
+Middleware events are batched and processed in a microtask for better performance:
+
+```typescript
+let eventCount = 0;
+
+registerMiddleware(countNode, 'listener-added', () => {
+  eventCount++;
+});
+
+// Add multiple listeners synchronously
+store$.count.onChange(() => {});
+store$.count.onChange(() => {});
+store$.count.onChange(() => {});
+
+console.log(eventCount); // 0 - not processed yet
+
+setTimeout(() => {
+  console.log(eventCount); // 3 - processed in microtask
+}, 0);
+```
+
+## Node-Specific Events
+
+Middleware is registered per-node, so events don't bubble up the tree:
+
+```typescript
+const store$ = observable({
+  user: {
+    name: 'John',
+    age: 30,
+  },
+});
+
+const rootNode = getNode(store$);
+const nameNode = getNode(store$.user.name);
+
+let rootEvents = 0;
+let nameEvents = 0;
+
+registerMiddleware(rootNode, 'listener-added', () => rootEvents++);
+registerMiddleware(nameNode, 'listener-added', () => nameEvents++);
+
+// Add listener to name
+store$.user.name.onChange(() => {});
+
+setTimeout(() => {
+  console.log(rootEvents); // 0 - root doesn't receive child events
+  console.log(nameEvents); // 1 - name receives its own event
+}, 0);
+```
+
+## Error Handling
+
+Errors in middleware handlers are caught and logged without affecting other handlers:
+
+```typescript
+const errorHandler = () => {
+  throw new Error('Middleware error');
+};
+
+const normalHandler = () => {
+  console.log('This still runs');
+};
+
+registerMiddleware(node, 'listener-added', errorHandler);
+registerMiddleware(node, 'listener-added', normalHandler);
+
+store$.count.onChange(() => {});
+// Error is logged to console, but normalHandler still executes
+```
+
+## Use Cases
+
+### Debugging Listener Leaks
+
+Track when listeners are added/removed to detect memory leaks:
+
+```typescript
+const listenerCounts = new Map();
+
+function trackListeners(node: NodeInfo, name: string) {
+  listenerCounts.set(name, 0);
+
+  registerMiddleware(node, 'listener-added', () => {
+    const count = listenerCounts.get(name) + 1;
+    listenerCounts.set(name, count);
+    console.log(`${name} listeners:`, count);
+  });
+
+  registerMiddleware(node, 'listener-removed', () => {
+    const count = listenerCounts.get(name) - 1;
+    listenerCounts.set(name, count);
+    console.log(`${name} listeners:`, count);
+  });
+}
+
+trackListeners(getNode(store$.count), 'count');
+```
+
+### Performance Monitoring
+
+Measure the number of active listeners:
+
+```typescript
+let activeListeners = 0;
+
+registerMiddleware(node, 'listener-added', (event) => {
+  activeListeners++;
+  console.log('Active listeners:', activeListeners);
+  console.log('Added at:', event.timestamp);
+});
+
+registerMiddleware(node, 'listener-removed', () => {
+  activeListeners--;
+  console.log('Active listeners:', activeListeners);
+});
+```
+
+### Custom Sync Logic
+
+Implement custom behavior when observables become active or inactive:
+
+```typescript
+function createAutoSyncObservable<T>(initialValue: T) {
+  const obs$ = observable(initialValue);
+  const node = getNode(obs$);
+  let syncInterval: NodeJS.Timeout | null = null;
+
+  registerMiddleware(node, 'listener-added', () => {
+    if (!syncInterval) {
+      // Start syncing when first listener is added
+      syncInterval = setInterval(() => {
+        console.log('Syncing...');
+        // Sync logic here
+      }, 1000);
+    }
+  });
+
+  registerMiddleware(node, 'listeners-cleared', () => {
+    // Stop syncing when all listeners are removed
+    if (syncInterval) {
+      clearInterval(syncInterval);
+      syncInterval = null;
+    }
+  });
+
+  return obs$;
+}
+
+const data$ = createAutoSyncObservable({ count: 0 });
+```
+
+### DevTools Integration
+
+Integrate with browser DevTools or debugging tools:
+
+```typescript
+function enableDevTools(store$: Observable<any>) {
+  const rootNode = getNode(store$);
+
+  registerMiddleware(rootNode, 'listener-added', (event) => {
+    // @ts-ignore - Send to DevTools
+    window.__LEGEND_STATE_DEVTOOLS__?.onListenerAdded({
+      timestamp: event.timestamp,
+      node: event.node,
+    });
+  });
+
+  registerMiddleware(rootNode, 'listeners-cleared', (event) => {
+    // @ts-ignore
+    window.__LEGEND_STATE_DEVTOOLS__?.onListenersCleared({
+      timestamp: event.timestamp,
+    });
+  });
+}
+```
+
+## Event Validation
+
+Middleware events are validated before being dispatched:
+
+- `listener-added`: Only fired if the listener is actually in the node's listener set
+- `listener-removed`: Only fired if the listener was successfully removed
+- `listeners-cleared`: Only fired if all listeners are truly cleared
+
+This ensures handlers only receive valid events.
+
+## Performance Considerations
+
+1. **Batching**: Events are batched in microtasks to avoid excessive handler calls
+2. **Fast path**: If no handlers are registered, event dispatch is skipped entirely
+3. **Weak references**: Handler maps use WeakMap to avoid memory leaks
+4. **Array pooling**: Internal arrays are reused to minimize allocations
+
+## Best Practices
+
+1. **Clean up handlers**: Always call the unregister function when you're done
+2. **Keep handlers lightweight**: Middleware runs frequently, so keep handlers fast
+3. **Use specific event types**: Register only for events you need
+4. **Handle errors**: Wrap handler logic in try/catch if it might throw
+5. **Avoid side effects**: Don't modify observables inside middleware handlers
+
+## Related
+
+- [getNode()](/api/observable#getnode) - Get the internal node of an observable
+- [onChange()](/core/observing#onchange) - Listen to observable changes
+- [observe()](/core/observing#observe) - Track observable access

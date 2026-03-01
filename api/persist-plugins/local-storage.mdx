@@ -1,0 +1,404 @@
+---
+title: localStorage Plugin
+description: Persist observables to browser localStorage or sessionStorage
+---
+
+The localStorage plugin persists observable data to the browser's `localStorage` or `sessionStorage`. This is the simplest persistence option for web applications.
+
+## Installation
+
+```bash
+npm install @legendapp/state
+```
+
+## Usage
+
+```ts
+import { synced } from '@legendapp/state/sync'
+import { ObservablePersistLocalStorage } from '@legendapp/state/persist-plugins/local-storage'
+
+const user$ = synced({
+  get: () => fetch('/api/user').then(r => r.json()),
+  persist: {
+    name: 'user',
+    plugin: ObservablePersistLocalStorage
+  }
+})
+```
+
+## Plugins
+
+### ObservablePersistLocalStorage
+
+Persists to `localStorage` (data survives browser restarts).
+
+```ts
+import { ObservablePersistLocalStorage } from '@legendapp/state/persist-plugins/local-storage'
+
+const data$ = synced({
+  persist: {
+    name: 'myData',
+    plugin: ObservablePersistLocalStorage
+  }
+})
+```
+
+### ObservablePersistSessionStorage
+
+Persists to `sessionStorage` (data cleared when tab closes).
+
+```ts
+import { ObservablePersistSessionStorage } from '@legendapp/state/persist-plugins/local-storage'
+
+const tempData$ = synced({
+  persist: {
+    name: 'tempData',
+    plugin: ObservablePersistSessionStorage
+  }
+})
+```
+
+## Global Configuration
+
+```ts
+import { configureObservableSync } from '@legendapp/state/sync'
+import { ObservablePersistLocalStorage } from '@legendapp/state/persist-plugins/local-storage'
+
+configureObservableSync({
+  persist: {
+    plugin: ObservablePersistLocalStorage
+  }
+})
+
+// Now all synced observables use localStorage by default
+const data$ = synced({
+  persist: { name: 'data' }  // Uses localStorage
+})
+```
+
+## Plugin API
+
+The localStorage plugin implements the `ObservablePersistPlugin` interface:
+
+### getTable()
+
+```ts
+getTable(table: string, init: any): any
+```
+
+Retrieves data from storage.
+
+<ParamField path="table" type="string" required>
+  Storage key name
+</ParamField>
+
+<ParamField path="init" type="any" required>
+  Initial value if key doesn't exist
+</ParamField>
+
+### set()
+
+```ts
+set(table: string, changes: Change[]): void
+```
+
+Saves changes to storage.
+
+<ParamField path="table" type="string" required>
+  Storage key name
+</ParamField>
+
+<ParamField path="changes" type="Change[]" required>
+  Array of changes to apply
+</ParamField>
+
+### getMetadata()
+
+```ts
+getMetadata(table: string): PersistMetadata
+```
+
+Retrieves sync metadata (lastSync, pending changes).
+
+<ParamField path="table" type="string" required>
+  Storage key name
+</ParamField>
+
+### setMetadata()
+
+```ts
+setMetadata(table: string, metadata: PersistMetadata): void
+```
+
+Saves sync metadata.
+
+<ParamField path="table" type="string" required>
+  Storage key name
+</ParamField>
+
+<ParamField path="metadata" type="PersistMetadata" required>
+  Metadata to save
+</ParamField>
+
+### deleteTable()
+
+```ts
+deleteTable(table: string): void
+```
+
+Removes data from storage.
+
+<ParamField path="table" type="string" required>
+  Storage key name
+</ParamField>
+
+### deleteMetadata()
+
+```ts
+deleteMetadata(table: string): void
+```
+
+Removes metadata from storage.
+
+<ParamField path="table" type="string" required>
+  Storage key name
+</ParamField>
+
+## Examples
+
+### Basic Usage
+
+```ts
+import { synced } from '@legendapp/state/sync'
+import { ObservablePersistLocalStorage } from '@legendapp/state/persist-plugins/local-storage'
+
+const settings$ = synced({
+  initial: {
+    theme: 'light',
+    notifications: true
+  },
+  persist: {
+    name: 'app-settings',
+    plugin: ObservablePersistLocalStorage
+  }
+})
+
+// Data is automatically persisted on changes
+settings$.theme.set('dark')
+
+// Data is automatically loaded on page refresh
+console.log(settings$.theme.get())  // 'dark'
+```
+
+### With Remote Sync
+
+```ts
+const user$ = synced({
+  get: () => fetch('/api/user').then(r => r.json()),
+  set: ({ value }) => fetch('/api/user', {
+    method: 'PUT',
+    body: JSON.stringify(value)
+  }),
+  persist: {
+    name: 'user',
+    plugin: ObservablePersistLocalStorage
+  }
+})
+
+// 1. Loads from localStorage immediately (fast)
+// 2. Syncs with server in background
+// 3. Saves to both localStorage and server on changes
+```
+
+### Session Storage for Temporary Data
+
+```ts
+import { ObservablePersistSessionStorage } from '@legendapp/state/persist-plugins/local-storage'
+
+// Shopping cart cleared when tab closes
+const cart$ = synced({
+  initial: { items: [] },
+  persist: {
+    name: 'shopping-cart',
+    plugin: ObservablePersistSessionStorage
+  }
+})
+```
+
+### Multiple Observables
+
+```ts
+const user$ = synced({
+  persist: {
+    name: 'user',  // Stored at key 'user'
+    plugin: ObservablePersistLocalStorage
+  }
+})
+
+const settings$ = synced({
+  persist: {
+    name: 'settings',  // Stored at key 'settings'
+    plugin: ObservablePersistLocalStorage
+  }
+})
+
+// Stored separately in localStorage:
+// localStorage.getItem('user') -> user data
+// localStorage.getItem('settings') -> settings data
+```
+
+### With Transform
+
+```ts
+const data$ = synced({
+  persist: {
+    name: 'data',
+    plugin: ObservablePersistLocalStorage,
+    transform: {
+      // Dates are converted to ISO strings for storage
+      save: (value) => ({
+        ...value,
+        createdAt: value.createdAt.toISOString()
+      }),
+      // ISO strings converted back to Dates when loaded
+      load: (value) => ({
+        ...value,
+        createdAt: new Date(value.createdAt)
+      })
+    }
+  }
+})
+```
+
+### Clear Persisted Data
+
+```ts
+import { syncState } from '@legendapp/state/sync'
+
+const data$ = synced({
+  persist: {
+    name: 'data',
+    plugin: ObservablePersistLocalStorage
+  }
+})
+
+// Clear persisted data
+const state = syncState(data$)
+await state.resetPersistence()
+
+// localStorage.getItem('data') -> null
+```
+
+## Storage Format
+
+Data is stored as JSON strings:
+
+```ts
+const user$ = synced({
+  initial: { name: 'John', age: 30 },
+  persist: {
+    name: 'user',
+    plugin: ObservablePersistLocalStorage
+  }
+})
+
+// localStorage contents:
+// key: 'user'
+// value: '{"name":"John","age":30}'
+
+// Metadata stored separately:
+// key: 'user__m'
+// value: '{"lastSync":1699564800000,"pending":{}}'
+```
+
+## Storage Limits
+
+localStorage has a storage limit (typically 5-10MB per origin):
+
+```ts
+try {
+  const largeData$ = synced({
+    persist: {
+      name: 'largeData',
+      plugin: ObservablePersistLocalStorage
+    }
+  })
+  
+  // May throw QuotaExceededError
+  largeData$.set(veryLargeObject)
+} catch (error) {
+  if (error.name === 'QuotaExceededError') {
+    console.error('localStorage quota exceeded')
+    // Consider using IndexedDB for large data
+  }
+}
+```
+
+## Server-Side Rendering
+
+The plugin gracefully handles SSR environments where `localStorage` is undefined:
+
+```ts
+// Safe to use in SSR
+const data$ = synced({
+  persist: {
+    name: 'data',
+    plugin: ObservablePersistLocalStorage
+  }
+})
+
+// On server: no-op (doesn't crash)
+// On client: uses localStorage
+```
+
+## Testing
+
+In test environments, the plugin uses a mock storage:
+
+```ts
+// In Jest/Vitest tests
+import { ObservablePersistLocalStorage } from '@legendapp/state/persist-plugins/local-storage'
+
+test('persists data', () => {
+  const data$ = synced({
+    initial: { count: 0 },
+    persist: {
+      name: 'test-data',
+      plugin: ObservablePersistLocalStorage
+    }
+  })
+  
+  data$.count.set(5)
+  // Uses globalThis._testlocalStorage in tests
+})
+```
+
+## Best Practices
+
+1. **Use meaningful names**: Choose unique, descriptive names for each persisted observable
+2. **Watch storage limits**: localStorage is limited to ~5MB per origin
+3. **Use sessionStorage for temporary data**: Shopping carts, form drafts, etc.
+4. **Handle quota errors**: Catch `QuotaExceededError` for large data
+5. **Consider IndexedDB**: For large datasets or complex queries
+
+## When to Use
+
+**Use localStorage when:**
+- Data is small (< 1MB)
+- Simple key-value storage is sufficient
+- You need synchronous access
+- Supporting older browsers
+
+**Use IndexedDB when:**
+- Data is large (> 1MB)
+- Need to store binary data
+- Need complex queries
+- Want better performance for large datasets
+
+## See Also
+
+- [IndexedDB Plugin](/api/persist-plugins/indexeddb) - For larger datasets
+- [AsyncStorage Plugin](/api/persist-plugins/async-storage) - For React Native
+- [MMKV Plugin](/api/persist-plugins/mmkv) - Fast React Native storage
+- [synced()](/api/sync/synced) - Create synced observables
+- [configureObservableSync()](/api/sync/configure) - Global configuration

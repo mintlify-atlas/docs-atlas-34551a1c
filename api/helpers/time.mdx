@@ -1,0 +1,275 @@
+---
+title: 'Time Helpers'
+description: 'Observable time utilities that update automatically'
+---
+
+## Overview
+
+Legend-State provides pre-configured time observables that automatically update at regular intervals. These are useful for displaying current time, implementing time-based UI updates, or scheduling periodic actions.
+
+## Available Observables
+
+### currentTime
+
+An observable that contains the current time and updates every minute.
+
+```typescript
+import { currentTime } from '@legendapp/state/helpers/time';
+
+// Type: Observable<Date>
+const now = currentTime.get();
+console.log(now); // Current Date object
+```
+
+**Update Interval:** Updates every 60 seconds (1 minute)
+
+### currentDay
+
+An observable that contains the current day (with time set to midnight) and updates at midnight.
+
+```typescript
+import { currentDay } from '@legendapp/state/helpers/time';
+
+// Type: Observable<Date>
+const today = currentDay.get();
+console.log(today); // Date object with time set to 00:00:00.000
+```
+
+**Update Interval:** Updates when the day changes (at midnight)
+
+## Usage in React
+
+### Display Current Time
+
+```typescript
+import { observer } from '@legendapp/state/react';
+import { currentTime } from '@legendapp/state/helpers/time';
+
+const Clock = observer(() => {
+    const time = currentTime.get();
+    
+    return (
+        <div>
+            {time.toLocaleTimeString()}
+        </div>
+    );
+});
+```
+
+The component automatically re-renders every minute when `currentTime` updates.
+
+### Display Relative Time
+
+```typescript
+import { observer } from '@legendapp/state/react';
+import { currentTime } from '@legendapp/state/helpers/time';
+import { observable } from '@legendapp/state';
+
+const post$ = observable({
+    createdAt: new Date('2024-01-01T10:00:00'),
+    title: 'Hello World'
+});
+
+const Post = observer(() => {
+    const now = currentTime.get();
+    const createdAt = post$.createdAt.get();
+    const minutesAgo = Math.floor((now.getTime() - createdAt.getTime()) / 60000);
+    
+    return (
+        <div>
+            <h2>{post$.title.get()}</h2>
+            <p>Posted {minutesAgo} minutes ago</p>
+        </div>
+    );
+});
+```
+
+### Display Current Date
+
+```typescript
+import { observer } from '@legendapp/state/react';
+import { currentDay } from '@legendapp/state/helpers/time';
+
+const DateDisplay = observer(() => {
+    const today = currentDay.get();
+    
+    return (
+        <div>
+            {today.toLocaleDateString('en-US', {
+                weekday: 'long',
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric'
+            })}
+        </div>
+    );
+});
+```
+
+## Advanced Usage
+
+### Computed Time Values
+
+```typescript
+import { computed } from '@legendapp/state';
+import { currentTime } from '@legendapp/state/helpers/time';
+
+const currentHour$ = computed(() => {
+    return currentTime.get().getHours();
+});
+
+const greeting$ = computed(() => {
+    const hour = currentHour$.get();
+    if (hour < 12) return 'Good morning';
+    if (hour < 18) return 'Good afternoon';
+    return 'Good evening';
+});
+```
+
+### Time-Based Conditions
+
+```typescript
+import { observer } from '@legendapp/state/react';
+import { currentDay } from '@legendapp/state/helpers/time';
+import { observable } from '@legendapp/state';
+
+const event$ = observable({
+    date: new Date('2024-12-25'),
+    name: 'Christmas'
+});
+
+const EventStatus = observer(() => {
+    const today = currentDay.get();
+    const eventDate = event$.date.get();
+    
+    const isToday = today.getTime() === eventDate.getTime();
+    const isPast = today > eventDate;
+    
+    return (
+        <div>
+            <h3>{event$.name.get()}</h3>
+            {isToday && <span>Today!</span>}
+            {isPast && <span>Past event</span>}
+            {!isToday && !isPast && <span>Upcoming</span>}
+        </div>
+    );
+});
+```
+
+### Listen to Time Changes
+
+```typescript
+import { currentTime, currentDay } from '@legendapp/state/helpers/time';
+
+// Run code every minute
+currentTime.onChange(({ value }) => {
+    console.log('Time updated:', value);
+    // Update analytics, refresh data, etc.
+});
+
+// Run code at midnight
+currentDay.onChange(({ value }) => {
+    console.log('New day:', value);
+    // Reset daily counters, fetch new data, etc.
+});
+```
+
+## Implementation Details
+
+The time observables are implemented as follows:
+
+- **Initial sync:** Both observables are initialized with the current time when the module loads
+- **currentTime:** Updates every 60 seconds (1 minute) using `setInterval`
+- **currentDay:** Checks on each `currentTime` update if the day has changed, and updates accordingly
+- **First update:** The first update happens at the next full minute (e.g., if initialized at 10:23:45, first update at 10:24:00)
+- **Time clearing:** `currentDay` has time set to `00:00:00.000` using `setHours(0, 0, 0, 0)`
+
+## Performance Considerations
+
+<Note>
+Since these observables update automatically, components that observe them will re-render periodically:
+
+- `currentTime`: Component re-renders every minute
+- `currentDay`: Component re-renders at midnight
+
+This is efficient for displaying time, but be mindful when using these in large component trees.
+</Note>
+
+## Use Cases
+
+### Real-Time Dashboard
+
+```typescript
+import { observer } from '@legendapp/state/react';
+import { currentTime } from '@legendapp/state/helpers/time';
+import { observable } from '@legendapp/state';
+
+const metrics$ = observable({
+    lastUpdated: new Date(),
+    value: 0
+});
+
+const Dashboard = observer(() => {
+    const now = currentTime.get();
+    const lastUpdated = metrics$.lastUpdated.get();
+    const minutesSinceUpdate = Math.floor(
+        (now.getTime() - lastUpdated.getTime()) / 60000
+    );
+    
+    return (
+        <div>
+            <div>Current Value: {metrics$.value.get()}</div>
+            <div>Last updated: {minutesSinceUpdate}m ago</div>
+        </div>
+    );
+});
+```
+
+### Session Timer
+
+```typescript
+import { computed } from '@legendapp/state';
+import { currentTime } from '@legendapp/state/helpers/time';
+import { observable } from '@legendapp/state';
+
+const session$ = observable({
+    startTime: new Date(),
+    isActive: true
+});
+
+const sessionDuration$ = computed(() => {
+    if (!session$.isActive.get()) return 0;
+    
+    const now = currentTime.get();
+    const start = session$.startTime.get();
+    return Math.floor((now.getTime() - start.getTime()) / 60000);
+});
+```
+
+### Daily Reset
+
+```typescript
+import { currentDay } from '@legendapp/state/helpers/time';
+import { observable } from '@legendapp/state';
+
+const dailyStats$ = observable({
+    date: new Date(),
+    count: 0,
+    views: 0
+});
+
+// Reset stats at midnight
+currentDay.onChange(({ value: newDay }) => {
+    dailyStats$.set({
+        date: newDay,
+        count: 0,
+        views: 0
+    });
+});
+```
+
+## Related
+
+- [computed](/api/computed) - Create derived values
+- [onChange](/api/observable/on-change) - Listen to observable changes
+- [observer](/api/react/observer) - Create reactive React components

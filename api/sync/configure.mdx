@@ -1,0 +1,361 @@
+---
+title: configureObservableSync()
+description: Configure global defaults for sync and persistence
+---
+
+The `configureObservableSync()` function sets global defaults for all synced observables. This is useful for setting application-wide persistence plugins, retry behavior, and other common settings.
+
+## Usage
+
+```ts
+import { configureObservableSync } from '@legendapp/state/sync'
+import { ObservablePersistLocalStorage } from '@legendapp/state/persist-plugins/local-storage'
+
+configureObservableSync({
+  persist: {
+    plugin: ObservablePersistLocalStorage
+  },
+  retry: {
+    infinite: true,
+    delay: 1000
+  },
+  debounceSet: 500
+})
+```
+
+## Parameters
+
+<ParamField path="options" type="SyncedOptionsGlobal" required>
+  Global configuration options for all synced observables
+</ParamField>
+
+### SyncedOptionsGlobal
+
+<ParamField path="persist" type="PersistOptions">
+  Default persistence configuration
+  
+  <Expandable title="persist fields">
+    <ResponseField name="plugin" type="ObservablePersistPlugin">
+      Default persistence plugin (localStorage, IndexedDB, etc.)
+      
+      ```ts
+      import { ObservablePersistLocalStorage } from '@legendapp/state/persist-plugins/local-storage'
+      
+      persist: {
+        plugin: ObservablePersistLocalStorage
+      }
+      ```
+    </ResponseField>
+    
+    <ResponseField name="retrySync" type="boolean" default="false">
+      Retry failed remote syncs on next load. Useful for offline support.
+    </ResponseField>
+    
+    <ResponseField name="readonly" type="boolean" default="false">
+      If true, observables won't persist changes by default
+    </ResponseField>
+    
+    <ResponseField name="onGetError" type="(error: Error) => void">
+      Global error handler for persistence get operations
+    </ResponseField>
+    
+    <ResponseField name="onSetError" type="(error: Error) => void">
+      Global error handler for persistence set operations
+    </ResponseField>
+    
+    <ResponseField name="indexedDB" type="ObservablePersistIndexedDBPluginOptions">
+      IndexedDB-specific configuration
+      
+      ```ts
+      indexedDB: {
+        databaseName: 'myapp',
+        version: 1,
+        tableNames: ['users', 'posts', 'settings']
+      }
+      ```
+    </ResponseField>
+    
+    <ResponseField name="asyncStorage" type="ObservablePersistAsyncStoragePluginOptions">
+      AsyncStorage-specific configuration (React Native)
+      
+      ```ts
+      import AsyncStorage from '@react-native-async-storage/async-storage'
+      
+      asyncStorage: {
+        AsyncStorage,
+        preload: true  // Preload all keys on startup
+      }
+      ```
+    </ResponseField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="retry" type="RetryOptions">
+  Default retry behavior for failed operations
+  
+  <Expandable title="retry fields">
+    <ResponseField name="infinite" type="boolean" default="false">
+      Retry indefinitely until successful
+    </ResponseField>
+    
+    <ResponseField name="times" type="number">
+      Maximum number of retry attempts (if not infinite)
+    </ResponseField>
+    
+    <ResponseField name="delay" type="number" default="1000">
+      Initial delay between retries in milliseconds
+    </ResponseField>
+    
+    <ResponseField name="backoff" type="'constant' | 'exponential'" default="constant">
+      How to increase delay between retries
+      - `constant`: Same delay each time
+      - `exponential`: Double delay each time
+    </ResponseField>
+    
+    <ResponseField name="maxDelay" type="number">
+      Maximum delay between retries (for exponential backoff)
+    </ResponseField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="debounceSet" type="number">
+  Default debounce time in milliseconds for remote saves. Batches rapid changes together.
+  
+  ```ts
+  debounceSet: 500  // Wait 500ms after last change before saving
+  ```
+</ParamField>
+
+<ParamField path="syncMode" type="'auto' | 'manual'" default="auto">
+  Default sync mode for all observables
+  - `auto`: Sync automatically when accessed
+  - `manual`: Only sync when `sync()` is called
+</ParamField>
+
+<ParamField path="mode" type="'set' | 'assign' | 'merge' | 'append' | 'prepend'" default="set">
+  Default mode for applying remote data
+</ParamField>
+
+<ParamField path="onBeforeSet" type="(params: { cancel: boolean }) => void">
+  Global handler called before any set operation
+</ParamField>
+
+<ParamField path="onAfterSet" type="() => void">
+  Global handler called after any set operation
+</ParamField>
+
+<ParamField path="onError" type="(error: Error, params: SyncedErrorParams) => void">
+  Global error handler for all sync operations
+  
+  ```ts
+  onError: (error, { source, type, retry, revert }) => {
+    console.error(`Error in ${source}:`, error)
+    // Report to error tracking service
+    Sentry.captureException(error)
+  }
+  ```
+</ParamField>
+
+## Return Value
+
+This function does not return a value. It modifies the global configuration.
+
+## Examples
+
+### Basic Configuration
+
+```ts
+import { configureObservableSync } from '@legendapp/state/sync'
+import { ObservablePersistLocalStorage } from '@legendapp/state/persist-plugins/local-storage'
+
+configureObservableSync({
+  persist: {
+    plugin: ObservablePersistLocalStorage
+  }
+})
+
+// Now all synced observables use localStorage by default
+const user$ = synced({
+  get: () => api.getUser(),
+  persist: { name: 'user' }  // No need to specify plugin
+})
+```
+
+### IndexedDB Configuration
+
+```ts
+import { configureObservableSync } from '@legendapp/state/sync'
+import { ObservablePersistIndexedDB } from '@legendapp/state/persist-plugins/indexeddb'
+
+configureObservableSync({
+  persist: {
+    plugin: ObservablePersistIndexedDB,
+    indexedDB: {
+      databaseName: 'myapp',
+      version: 1,
+      tableNames: ['users', 'posts', 'comments', 'settings']
+    }
+  }
+})
+```
+
+### React Native with AsyncStorage
+
+```ts
+import { configureObservableSync } from '@legendapp/state/sync'
+import { ObservablePersistAsyncStorage } from '@legendapp/state/persist-plugins/async-storage'
+import AsyncStorage from '@react-native-async-storage/async-storage'
+
+configureObservableSync({
+  persist: {
+    plugin: ObservablePersistAsyncStorage,
+    asyncStorage: {
+      AsyncStorage,
+      preload: ['user', 'settings']  // Preload specific keys
+    }
+  }
+})
+```
+
+### Retry Configuration
+
+```ts
+configureObservableSync({
+  retry: {
+    infinite: true,     // Keep retrying
+    delay: 1000,        // Start with 1 second
+    backoff: 'exponential',  // Double each time
+    maxDelay: 30000     // Max 30 seconds between retries
+  },
+  persist: {
+    plugin: ObservablePersistLocalStorage,
+    retrySync: true     // Retry failed syncs on next load
+  }
+})
+```
+
+### Debounce Configuration
+
+```ts
+configureObservableSync({
+  debounceSet: 1000,  // Wait 1 second after last change
+  persist: {
+    plugin: ObservablePersistLocalStorage
+  }
+})
+
+// Good for rapid user input
+const search$ = synced({
+  get: (params) => api.search(params.value),
+  persist: { name: 'search' }
+  // Inherits 1 second debounce
+})
+```
+
+### Global Error Handling
+
+```ts
+import * as Sentry from '@sentry/browser'
+
+configureObservableSync({
+  persist: {
+    plugin: ObservablePersistLocalStorage,
+    onGetError: (error) => {
+      console.error('Persistence load error:', error)
+      Sentry.captureException(error)
+    },
+    onSetError: (error) => {
+      console.error('Persistence save error:', error)
+      Sentry.captureException(error)
+    }
+  },
+  onError: (error, { source, type }) => {
+    console.error(`Sync error in ${source} (${type}):`, error)
+    Sentry.captureException(error, {
+      tags: { source, type }
+    })
+  }
+})
+```
+
+### Manual Sync Mode
+
+```ts
+configureObservableSync({
+  syncMode: 'manual',  // Don't sync automatically
+  persist: {
+    plugin: ObservablePersistLocalStorage
+  }
+})
+
+// All observables now require manual sync
+const data$ = synced({
+  get: () => api.getData(),
+  persist: { name: 'data' }
+})
+
+// Must call sync manually
+const syncState = syncState(data$)
+await syncState.sync()
+```
+
+### Offline-First Configuration
+
+```ts
+configureObservableSync({
+  persist: {
+    plugin: ObservablePersistIndexedDB,
+    retrySync: true,  // Queue failed syncs
+    indexedDB: {
+      databaseName: 'myapp_offline',
+      version: 1,
+      tableNames: ['todos', 'notes']
+    }
+  },
+  retry: {
+    infinite: true,  // Keep trying to sync
+    delay: 5000,     // Try every 5 seconds
+    backoff: 'constant'
+  },
+  debounceSet: 2000,  // Batch changes
+  onError: (error, { source }) => {
+    // Don't show errors for network failures
+    if (error.message.includes('fetch')) return
+    showErrorToast(`${source} failed: ${error.message}`)
+  }
+})
+```
+
+## Per-Observable Override
+
+Individual observables can override global settings:
+
+```ts
+// Global config
+configureObservableSync({
+  debounceSet: 500,
+  retry: { times: 3 }
+})
+
+// Override for specific observable
+const data$ = synced({
+  get: () => api.getData(),
+  debounceSet: 0,  // No debounce for this one
+  retry: { infinite: true }  // Retry forever
+})
+```
+
+## Best Practices
+
+1. **Call early**: Configure before creating any synced observables
+2. **Use appropriate plugin**: localStorage for web, AsyncStorage/MMKV for React Native
+3. **Enable retry**: Use `retrySync: true` for offline support
+4. **Set debounce**: Use `debounceSet` to reduce server load
+5. **Handle errors**: Implement `onError` for production apps
+
+## See Also
+
+- [synced()](/api/sync/synced) - Create synced observables
+- [syncObservable()](/api/sync/sync-observable) - Add sync to existing observables
+- [Persist Plugins](/api/persist-plugins/local-storage) - Available persistence plugins
+- [Sync & Persistence Guide](/guides/sync-persistence)

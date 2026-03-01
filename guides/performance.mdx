@@ -1,0 +1,434 @@
+---
+title: Performance Optimization
+description: Tips and techniques to maximize performance with Legend-State
+---
+
+Legend-State is designed to be the **fastest React state library**, beating other libraries on nearly every benchmark. This guide explains how Legend-State achieves its performance and how you can optimize your application.
+
+## Why Legend-State is Fast
+
+Legend-State achieves its exceptional performance through several key design decisions:
+
+### Fine-Grained Reactivity
+
+Legend-State lets you make your renders super fine-grained, so your apps are faster because React has to do less work. **The best way to be fast is to render less, less often.**
+
+```jsx
+import { useObservable } from '@legendapp/state/react';
+import { Memo } from '@legendapp/state/react';
+
+function FineGrained() {
+  const count$ = useObservable(0);
+  
+  useInterval(() => {
+    count$.set(v => v + 1);
+  }, 600);
+  
+  // The text updates itself so the component doesn't re-render
+  return (
+    <div>
+      Count: <Memo>{count$}</Memo>
+    </div>
+  );
+}
+```
+
+### Optimized Architecture
+
+Legend-State uses several architectural optimizations:
+
+1. **Proxy-based observables**: Efficient tracking with minimal overhead
+2. **Lazy activation**: Observable nodes activate only when accessed
+3. **Batched updates**: Multiple changes are batched into a single notification
+4. **Smart array handling**: Optimized for large lists with minimal re-renders
+
+### Minimal Bundle Size
+
+At only **4kb**, Legend-State has a tiny footprint that won't bloat your bundle. Combined with minimal boilerplate, you'll see significant file size savings.
+
+## Benchmark Results
+
+Legend-State beats every other state library on just about every metric and is so optimized for arrays that it even beats vanilla JS on the "swap" and "replace all rows" benchmarks.
+
+<Info>
+  See the [official benchmarks](https://www.legendapp.com/open-source/state/v3/intro/fast/) for detailed performance comparisons.
+</Info>
+
+## Performance Optimization Techniques
+
+### 1. Use Fine-Grained Reactivity
+
+Prefer using reactive components over wrapping entire components with `observer`:
+
+```tsx
+import { observable } from '@legendapp/state';
+import { Reactive } from '@legendapp/state/react';
+
+const state$ = observable({ count: 0, name: 'App' });
+
+// Good: Only the changing elements re-render
+function Optimized() {
+  return (
+    <div>
+      <Reactive.div $text={state$.name} />
+      <Reactive.div $text={() => `Count: ${state$.count.get()}`} />
+    </div>
+  );
+}
+
+// Less optimal: Entire component re-renders
+const LessOptimized = observer(function LessOptimized() {
+  return (
+    <div>
+      <div>{state$.name.get()}</div>
+      <div>Count: {state$.count.get()}</div>
+    </div>
+  );
+});
+```
+
+### 2. Leverage Lazy Activation
+
+Observables only activate when observed. This means creating or setting large objects is very fast:
+
+```tsx
+import { observable } from '@legendapp/state';
+
+// Creating this large object is fast because nodes activate lazily
+const data$ = observable({
+  users: Array.from({ length: 10000 }, (_, i) => ({
+    id: i,
+    name: `User ${i}`,
+    email: `user${i}@example.com`,
+  })),
+});
+
+// Only the accessed nodes activate
+function UserCount() {
+  // Fast: Only activates the length property
+  const count = data$.users.length.get();
+  return <div>Total users: {count}</div>;
+}
+```
+
+### 3. Optimize Array Rendering
+
+Legend-State has special optimizations for arrays that can even beat vanilla JavaScript:
+
+```tsx
+import { observable } from '@legendapp/state';
+import { For } from '@legendapp/state/react';
+
+const items$ = observable([
+  { id: 1, text: 'Item 1' },
+  { id: 2, text: 'Item 2' },
+  { id: 3, text: 'Item 3' },
+]);
+
+// The For component is optimized for arrays
+function OptimizedList() {
+  return (
+    <For each={items$}>
+      {(item$) => (
+        <div>
+          <Reactive.span $text={item$.text} />
+        </div>
+      )}
+    </For>
+  );
+}
+```
+
+<Accordion title="How array optimization works">
+  Legend-State tracks array changes at a granular level:
+  
+  - **Adds/removes**: Only new/removed items re-render
+  - **Reorders**: Items maintain their identity and position
+  - **Updates**: Only changed items re-render
+  
+  The `For` component uses shallow tracking by default and can detect moves, swaps, and replacements efficiently.
+</Accordion>
+
+### 4. Use peek() for One-Time Reads
+
+When you need to read a value without tracking it, use `peek()`:
+
+```tsx
+import { observable, observe } from '@legendapp/state';
+
+const state$ = observable({ count: 0, userId: 123 });
+
+observe(() => {
+  const count = state$.count.get(); // Tracked
+  const userId = state$.userId.peek(); // Not tracked
+  
+  console.log(`Count: ${count} for user ${userId}`);
+  // Only re-runs when count changes, not when userId changes
+});
+```
+
+### 5. Batch Updates
+
+Multiple changes are automatically batched, but you can explicitly batch for better control:
+
+```tsx
+import { observable, batch } from '@legendapp/state';
+
+const state$ = observable({ a: 0, b: 0, c: 0 });
+
+// Without batching: 3 notifications
+state$.a.set(1);
+state$.b.set(2);
+state$.c.set(3);
+
+// With batching: 1 notification
+batch(() => {
+  state$.a.set(1);
+  state$.b.set(2);
+  state$.c.set(3);
+});
+```
+
+### 6. Use Shallow Tracking
+
+For arrays and objects where you only care about shallow changes:
+
+```tsx
+import { observable, observe } from '@legendapp/state';
+
+const items$ = observable([{ id: 1, name: 'Item 1' }]);
+
+// Only track array length/identity changes, not deep changes
+observe(() => {
+  const items = items$.get(true); // true = shallow
+  console.log('Array changed:', items.length);
+});
+```
+
+### 7. Computed Values
+
+Use computed observables for derived state that only re-computes when dependencies change:
+
+```tsx
+import { observable } from '@legendapp/state';
+
+const state$ = observable({
+  firstName: 'John',
+  lastName: 'Doe',
+});
+
+// Computed value only re-computes when firstName or lastName changes
+const fullName$ = observable(() => 
+  `${state$.firstName.get()} ${state$.lastName.get()}`
+);
+```
+
+<Info>
+  In v3, computeds only re-compute when observed. They won't run unless something is actively listening to them.
+</Info>
+
+## Performance Anti-Patterns
+
+<Warning>
+  Avoid these common mistakes that can hurt performance:
+</Warning>
+
+### ❌ Overusing observer
+
+```tsx
+// Bad: Entire component re-renders for any state change
+const App = observer(function App() {
+  const { count, name, user, settings } = state$.get();
+  return (
+    <div>
+      <div>{count}</div>
+      <div>{name}</div>
+    </div>
+  );
+});
+
+// Good: Only changing elements re-render
+function App() {
+  return (
+    <div>
+      <Reactive.div $text={state$.count} />
+      <Reactive.div $text={state$.name} />
+    </div>
+  );
+}
+```
+
+### ❌ Reading entire objects
+
+```tsx
+// Bad: Tracks all properties
+const allData = state$.get();
+
+// Good: Track only what you need
+const name = state$.name.get();
+const count = state$.count.get();
+```
+
+### ❌ Creating observables in render
+
+```tsx
+// Bad: Creates new observable every render
+function Component() {
+  const local$ = observable({ count: 0 }); // ❌
+  return <div>{local$.count.get()}</div>;
+}
+
+// Good: Use useObservable hook
+function Component() {
+  const local$ = useObservable({ count: 0 }); // ✓
+  return <div>{local$.count.get()}</div>;
+}
+```
+
+### ❌ Not using keys in lists
+
+```tsx
+// Bad: React can't track item identity
+<For each={items$}>
+  {(item$) => <div>{item$.text.get()}</div>}
+</For>
+
+// Good: Provide stable keys (if items have id fields, it's automatic)
+<For each={items$} item={(item$) => (
+  <div key={item$.id.get()}>{item$.text.get()}</div>
+)}>
+</For>
+```
+
+## Benchmark Categories
+
+Legend-State optimizations fall into three categories:
+
+<Steps>
+  <Step title="Architecture Optimizations">
+    Related to the core design, including how `Proxy` is used:
+    - Lazy node activation
+    - Efficient tracking system
+    - Minimal overhead proxies
+  </Step>
+  
+  <Step title="Micro-Optimizations">
+    Related to JavaScript primitives:
+    - Efficient iteration
+    - Optimized object types
+    - Minimal function calls
+  </Step>
+  
+  <Step title="Array Optimizations">
+    Optimizations for rendering large lists:
+    - Shallow comparison
+    - Move detection
+    - Incremental updates
+  </Step>
+</Steps>
+
+## Real-World Performance Tips
+
+### Large Lists
+
+For lists with thousands of items:
+
+```tsx
+import { observable } from '@legendapp/state';
+import { For } from '@legendapp/state/react';
+
+const items$ = observable(
+  Array.from({ length: 10000 }, (_, i) => ({
+    id: i,
+    name: `Item ${i}`,
+  }))
+);
+
+function MassiveList() {
+  return (
+    <For each={items$}>
+      {(item$) => (
+        // Each item only re-renders when its own data changes
+        <div>
+          <Reactive.span $text={item$.name} />
+        </div>
+      )}
+    </For>
+  );
+}
+```
+
+### Complex Forms
+
+For forms with many fields:
+
+```tsx
+const form$ = observable({
+  personal: { firstName: '', lastName: '', email: '' },
+  address: { street: '', city: '', zip: '' },
+  preferences: { theme: 'light', notifications: true },
+});
+
+function ComplexForm() {
+  return (
+    <form>
+      {/* Each input only tracks its own field */}
+      <Reactive.input $value={form$.personal.firstName} />
+      <Reactive.input $value={form$.personal.lastName} />
+      <Reactive.input $value={form$.personal.email} />
+      
+      <Reactive.input $value={form$.address.street} />
+      <Reactive.input $value={form$.address.city} />
+      <Reactive.input $value={form$.address.zip} />
+    </form>
+  );
+}
+```
+
+### Conditional Rendering
+
+Use the `Show` component for efficient conditional rendering:
+
+```tsx
+import { Show } from '@legendapp/state/react';
+
+const state$ = observable({ isLoggedIn: false, user: null });
+
+function App() {
+  return (
+    <Show if={state$.isLoggedIn}>
+      {{(
+        ) => <Dashboard user={state$.user.get()} />,
+        () => <Login />,
+      }}
+    </Show>
+  );
+}
+```
+
+## Measuring Performance
+
+Use React DevTools Profiler to measure the impact of your optimizations:
+
+1. Enable "Highlight updates when components render"
+2. Look for unnecessary re-renders
+3. Measure render duration
+4. Compare before/after optimization
+
+## Summary
+
+<Info>
+  **Key Takeaways**:
+  - Use fine-grained reactivity with `Reactive` components
+  - Leverage lazy activation for large objects
+  - Use `For` component for optimized lists
+  - Use `peek()` for untracked reads
+  - Batch updates when making multiple changes
+  - Avoid reading entire objects when you only need specific properties
+</Info>
+
+## Next Steps
+
+- Learn about [TypeScript integration](/guides/typescript)
+- Explore [React Native setup](/guides/react-native)
+- Read the [Migration Guide](/guides/migration-v3)

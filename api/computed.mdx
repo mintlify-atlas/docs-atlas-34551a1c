@@ -1,0 +1,280 @@
+---
+title: computed()
+description: Create computed observable values
+---
+
+## computed()
+
+Creates a computed observable that automatically derives its value from other observables. The computed value updates automatically when its dependencies change.
+
+### Signatures
+
+```typescript
+function computed<T>(
+    get: () => RecursiveValueOrFunction<T>
+): Observable<T>
+
+function computed<T, T2 = T>(
+    get: (() => RecursiveValueOrFunction<T>) | RecursiveValueOrFunction<T>,
+    set: (value: T2) => void
+): Observable<T>
+```
+
+### Parameters
+
+<ParamField path="get" type="() => T" required>
+  A function that computes the derived value. This function:
+  - Runs immediately when the computed observable is first accessed
+  - Re-runs automatically when any observables accessed within it change
+  - Should be pure (no side effects)
+  - Can access any observables using `.get()`
+  
+  Can also be a static value or Promise, though using a function is most common.
+</ParamField>
+
+<ParamField path="set" type="(value: T2) => void" optional>
+  An optional setter function that makes the computed observable writable. When called, it should update the source observables that the getter depends on.
+  
+  The setter receives the new value being set.
+</ParamField>
+
+### Returns
+
+<ResponseField name="Observable<T>" type="Observable<T>">
+  A computed observable that:
+  - Automatically recomputes when dependencies change
+  - Caches the computed value (only recomputes when needed)
+  - Can be read using `.get()` or `.peek()`
+  - Can be set (if a setter was provided)
+  - Can be listened to with `.onChange()`
+</ResponseField>
+
+### Examples
+
+#### Basic computed value
+
+```typescript
+import { observable, computed } from '@legendapp/state'
+
+const firstName$ = observable('John')
+const lastName$ = observable('Doe')
+
+const fullName$ = computed(() => {
+  return `${firstName$.get()} ${lastName$.get()}`
+})
+
+console.log(fullName$.get()) // 'John Doe'
+
+firstName$.set('Jane')
+console.log(fullName$.get()) // 'Jane Doe'
+```
+
+#### Computed from complex data
+
+```typescript
+const cart$ = observable({
+  items: [
+    { name: 'Apple', price: 1.50, quantity: 3 },
+    { name: 'Banana', price: 0.75, quantity: 5 }
+  ]
+})
+
+const total$ = computed(() => {
+  return cart$.items.get().reduce((sum, item) => {
+    return sum + item.price * item.quantity
+  }, 0)
+})
+
+console.log(total$.get()) // 8.25
+
+cart$.items[0].quantity.set(5)
+console.log(total$.get()) // 11.25
+```
+
+#### Writable computed (with setter)
+
+```typescript
+const celsius$ = observable(0)
+
+const fahrenheit$ = computed(
+  () => celsius$.get() * 9/5 + 32,
+  (value) => celsius$.set((value - 32) * 5/9)
+)
+
+console.log(fahrenheit$.get()) // 32
+
+// Setting the computed updates the source
+fahrenheit$.set(212)
+console.log(celsius$.get())     // 100
+console.log(fahrenheit$.get())  // 212
+```
+
+#### Nested computeds
+
+```typescript
+const width$ = observable(10)
+const height$ = observable(20)
+
+const area$ = computed(() => {
+  return width$.get() * height$.get()
+})
+
+const description$ = computed(() => {
+  const w = width$.get()
+  const h = height$.get()
+  const a = area$.get()
+  return `Rectangle ${w}x${h} with area ${a}`
+})
+
+console.log(description$.get())
+// 'Rectangle 10x20 with area 200'
+
+width$.set(15)
+console.log(description$.get())
+// 'Rectangle 15x20 with area 300'
+```
+
+#### Computed with filtering
+
+```typescript
+const todos$ = observable([
+  { id: 1, text: 'Buy milk', completed: false },
+  { id: 2, text: 'Walk dog', completed: true },
+  { id: 3, text: 'Write code', completed: false }
+])
+
+const activeTodos$ = computed(() => {
+  return todos$.get().filter(todo => !todo.completed)
+})
+
+const completedTodos$ = computed(() => {
+  return todos$.get().filter(todo => todo.completed)
+})
+
+console.log(activeTodos$.get().length)    // 2
+console.log(completedTodos$.get().length) // 1
+
+todos$[0].completed.set(true)
+console.log(activeTodos$.get().length)    // 1
+console.log(completedTodos$.get().length) // 2
+```
+
+#### Computed with async data
+
+```typescript
+const userId$ = observable(1)
+const userData$ = observable<User>()
+
+// Computed that triggers async fetch
+const userSummary$ = computed(() => {
+  const id = userId$.get()
+  const user = userData$.get()
+  
+  if (!user || user.id !== id) {
+    // Trigger fetch when ID changes
+    fetch(`/api/users/${id}`)
+      .then(r => r.json())
+      .then(data => userData$.set(data))
+    return 'Loading...'
+  }
+  
+  return `${user.name} (${user.email})`
+})
+
+console.log(userSummary$.get()) // 'Loading...'
+// Later: 'John Doe (john@example.com)'
+```
+
+#### Listening to computed changes
+
+```typescript
+const a$ = observable(5)
+const b$ = observable(10)
+
+const sum$ = computed(() => a$.get() + b$.get())
+
+sum$.onChange((value) => {
+  console.log('Sum changed to:', value)
+})
+
+a$.set(7) // Logs: Sum changed to: 17
+b$.set(3) // Logs: Sum changed to: 10
+```
+
+#### Computed with conditional dependencies
+
+```typescript
+const mode$ = observable<'manual' | 'auto'>('auto')
+const manualValue$ = observable(10)
+const autoValue$ = observable(20)
+
+const value$ = computed(() => {
+  const mode = mode$.get()
+  if (mode === 'manual') {
+    return manualValue$.get()
+  } else {
+    return autoValue$.get()
+  }
+})
+
+console.log(value$.get()) // 20
+
+mode$.set('manual')
+console.log(value$.get()) // 10
+
+// Now only tracks manualValue$, not autoValue$
+autoValue$.set(30)
+console.log(value$.get()) // 10 (no change)
+
+manualValue$.set(15)
+console.log(value$.get()) // 15
+```
+
+### Performance
+
+<Tip>
+  Computed observables are lazy - they only compute their value when accessed, and cache the result until dependencies change.
+</Tip>
+
+```typescript
+const heavy$ = computed(() => {
+  console.log('Computing...')
+  // Expensive operation
+  return expensiveCalculation()
+})
+
+// No computation yet
+heavy$.get() // Logs: Computing...
+heavy$.get() // No log (uses cached value)
+
+dependency$.set(newValue)
+heavy$.get() // Logs: Computing... (recomputes)
+```
+
+### Type Definitions
+
+```typescript
+type RecursiveValueOrFunction<T> = 
+  | T
+  | (() => T)
+  | (() => Promise<T>)
+  | Promise<T>
+  | Observable<T>
+  | (T extends object ? {
+      [K in keyof T]: RecursiveValueOrFunction<T[K]>
+    } : never)
+```
+
+### Notes
+
+<Note>
+  Computed observables automatically track dependencies - you don't need to declare them explicitly.
+</Note>
+
+<Warning>
+  The getter function should be pure and have no side effects. Use `observe()` for side effects instead.
+</Warning>
+
+<Tip>
+  Computed observables only recompute when their dependencies change, making them very efficient for expensive calculations.
+</Tip>

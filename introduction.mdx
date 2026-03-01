@@ -1,0 +1,151 @@
+---
+title: "Welcome to Legend-State"
+description: "A super fast all-in-one state and sync library that lets you write less code to make faster apps"
+---
+
+<img
+  src="https://www.legendapp.com/img/dev/state/times.png"
+  alt="Legend-State Performance Benchmark"
+/>
+
+## What is Legend-State?
+
+Legend-State is a super fast all-in-one state and sync library that lets you write less code to make faster apps. There is no boilerplate and no contexts, actions, reducers, dispatchers, sagas, thunks, or epics. It doesn't modify your data at all - just call `get()` to get the raw data and `set()` to change it.
+
+```jsx
+import { observable } from "@legendapp/state"
+import { observer } from "@legendapp/state/react"
+
+const settings$ = observable({ theme: 'dark' })
+
+// get returns the raw data
+settings$.theme.get() // 'dark'
+
+// set sets
+settings$.theme.set('light')
+
+const Component = observer(function Component() {
+    const theme = settings$.theme.get()
+
+    return <div>Theme: {theme}</div>
+})
+```
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card title="Easy to Use" icon="wand-magic-sparkles">
+    No boilerplate, contexts, or complex patterns. Just `get()` and `set()` for state management.
+  </Card>
+  
+  <Card title="Blazing Fast" icon="bolt">
+    The fastest React state library. Beats every other library on benchmarks and even vanilla JS on some tests.
+  </Card>
+  
+  <Card title="Fine-Grained Reactivity" icon="fire">
+    Components re-render only when the specific data they use changes, making your apps lightning fast.
+  </Card>
+  
+  <Card title="Powerful Sync & Persistence" icon="database">
+    Built-in local-first sync with plugins for Supabase, Keel, TanStack Query, and more.
+  </Card>
+  
+  <Card title="Type-Safe" icon="shield-check">
+    Fully typed with TypeScript for the best developer experience.
+  </Card>
+  
+  <Card title="Tiny Bundle Size" icon="feather">
+    Only 4kb minified and gzipped - massive savings in bundle size.
+  </Card>
+</CardGroup>
+
+## Why Legend-State?
+
+### Super Easy to Use
+
+There is no boilerplate and there are no contexts, actions, reducers, dispatchers, sagas, thunks, or epics. It doesn't modify your data at all, and you can just call `get()` to get the raw data and `set()` to change it.
+
+In React components you can use the `observer` HOC to automatically re-render whenever observables change, or use hooks like `useSelector` for more control.
+
+### The Fastest React State Library
+
+Legend-State beats every other state library on just about every metric and is so optimized for arrays that it even beats vanilla JS on the "swap" and "replace all rows" benchmarks. At only 4kb and with the massive reduction in boilerplate code, you'll have big savings in file size too.
+
+### Fine-Grained Reactivity for Minimal Renders
+
+Legend-State lets you make your renders super fine-grained, so your apps will be much faster because React has to do less work. The best way to be fast is to render less, less often.
+
+```jsx
+function FineGrained() {
+    const count$ = useObservable(0)
+
+    useInterval(() => {
+        count$.set(v => v + 1)
+    }, 600)
+
+    // The text updates itself so the component doesn't re-render
+    return (
+        <div>
+            Count: <Memo>{count$}</Memo>
+        </div>
+    )
+}
+```
+
+### Powerful Sync and Persistence
+
+Legend-State includes a powerful sync and persistence system. It easily enables local-first apps by optimistically applying all changes locally first, retrying changes even after restart until they eventually sync, and syncing minimal diffs.
+
+Local persistence plugins for the browser and React Native are included, with sync plugins for Keel, Supabase, TanStack Query, and `fetch`.
+
+```js
+const state$ = observable({
+    users: syncedKeel({
+        list: queries.getUsers,
+        create: mutations.createUsers,
+        update: mutations.updateUsers,
+        delete: mutations.deleteUsers,
+        persist: { name: 'users', retrySync: true },
+        debounceSet: 500,
+        retry: {
+            infinite: true,
+        },
+        changesSince: 'last-sync',
+    }),
+})
+
+// Setting a value saves update to server
+state$.users['uid'].name.set('Annyong')
+```
+
+## Get Started
+
+<CardGroup cols={3}>
+  <Card title="Installation" icon="download" href="/installation">
+    Install Legend-State with your favorite package manager.
+  </Card>
+  
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Build your first app with Legend-State in minutes.
+  </Card>
+  
+  <Card title="Core Concepts" icon="book" href="/core/observables">
+    Learn the fundamentals of observables and reactivity.
+  </Card>
+</CardGroup>
+
+<Card title="React Integration" icon="react" href="/react/overview" horizontal>
+  Integrate Legend-State with React using hooks and reactive components.
+</Card>
+
+## Community
+
+<CardGroup cols={2}>
+  <Card title="GitHub" icon="github" href="https://github.com/LegendApp/legend-state">
+    Star us on GitHub and contribute to the project.
+  </Card>
+  
+  <Card title="Discord" icon="discord" href="https://discord.gg/5CBaNtADNX">
+    Join our community on Discord to get help and discuss Legend-State.
+  </Card>
+</CardGroup>

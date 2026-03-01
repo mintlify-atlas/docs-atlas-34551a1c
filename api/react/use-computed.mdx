@@ -1,0 +1,276 @@
+---
+title: useComputed
+description: Create a computed observable within a React component
+---
+
+`useComputed` is a React hook that creates a computed observable - an observable whose value is derived from other observables or a function.
+
+<Note>
+This hook may be deprecated in the future. Consider using `useObservable` with a function instead.
+</Note>
+
+## Usage
+
+```tsx
+import { useComputed } from '@legendapp/state/react'
+import { state$ } from './state'
+
+function Component() {
+  const total$ = useComputed(() => {
+    const items = state$.cart.items.get()
+    return items.reduce((sum, item) => sum + item.price, 0)
+  })
+  
+  return <div>Total: {total$.get()}</div>
+}
+```
+
+## Signature
+
+```typescript
+// Read-only computed
+function useComputed<T>(
+  get: () => T | Promise<T>
+): Observable<T>
+
+// With dependencies
+function useComputed<T>(
+  get: () => T | Promise<T>,
+  deps: any[]
+): Observable<T>
+
+// Read-write computed (linked)
+function useComputed<T, T2 = T>(
+  get: (() => T | Promise<T>) | ObservableParam<T>,
+  set: (value: T2) => void
+): Observable<T>
+
+// Read-write computed with dependencies
+function useComputed<T, T2 = T>(
+  get: (() => T | Promise<T>) | ObservableParam<T>,
+  set: (value: T2) => void,
+  deps: any[]
+): Observable<T>
+```
+
+## Parameters
+
+<ParamField path="get" type="(() => T | Promise<T>) | ObservableParam<T>" required>
+  A function that computes the observable's value, or an observable to derive from.
+  
+  The function can:
+  - Access other observables with `.get()`
+  - Return a Promise for async computed values
+  - Be called automatically when dependencies change
+</ParamField>
+
+<ParamField path="set" type="(value: T2) => void" optional>
+  An optional setter function that defines how to update the underlying observables when this computed observable is set.
+  
+  When provided, creates a "linked" observable that can be both read and written.
+</ParamField>
+
+<ParamField path="deps" type="any[]" optional>
+  An optional dependency array similar to `useEffect`. When deps change, the computed observable is recreated.
+</ParamField>
+
+## Returns
+
+<ResponseField name="Observable<T>" type="Observable<T>">
+  A computed observable that automatically updates when its dependencies change.
+</ResponseField>
+
+## Examples
+
+### Basic computed value
+
+```tsx
+const firstName$ = useObservable('John')
+const lastName$ = useObservable('Doe')
+
+const fullName$ = useComputed(() => 
+  `${firstName$.get()} ${lastName$.get()}`
+)
+
+// fullName$ automatically updates when firstName$ or lastName$ changes
+console.log(fullName$.get()) // "John Doe"
+```
+
+### Computed from global state
+
+```tsx
+const total$ = useComputed(() => {
+  const items = state$.cart.items.get()
+  const tax = state$.cart.taxRate.get()
+  const subtotal = items.reduce((sum, item) => sum + item.price, 0)
+  return subtotal * (1 + tax)
+})
+```
+
+### With dependencies
+
+```tsx
+function ProductList({ category }) {
+  const filteredProducts$ = useComputed(
+    () => state$.products.get().filter(p => p.category === category),
+    [category] // Recompute when category prop changes
+  )
+  
+  return <>{filteredProducts$.get().map(p => <div key={p.id}>{p.name}</div>)}</>
+}
+```
+
+### Async computed
+
+```tsx
+const userData$ = useComputed(async () => {
+  const userId = state$.currentUser.id.get()
+  const response = await fetch(`/api/users/${userId}`)
+  return response.json()
+})
+
+// userData$ is undefined until the Promise resolves
+```
+
+### Read-write computed (linked)
+
+```tsx
+const celsius$ = useObservable(0)
+
+// Create a two-way binding between celsius and fahrenheit
+const fahrenheit$ = useComputed(
+  () => (celsius$.get() * 9/5) + 32,
+  (value) => celsius$.set((value - 32) * 5/9)
+)
+
+// Reading
+console.log(fahrenheit$.get()) // 32
+
+// Writing updates the underlying celsius$
+fahrenheit$.set(212)
+console.log(celsius$.get()) // 100
+```
+
+### Complex linked observable
+
+```tsx
+const user$ = useObservable({
+  firstName: 'John',
+  lastName: 'Doe'
+})
+
+const fullName$ = useComputed(
+  () => `${user$.firstName.get()} ${user$.lastName.get()}`,
+  (value: string) => {
+    const [firstName, lastName] = value.split(' ')
+    user$.firstName.set(firstName)
+    user$.lastName.set(lastName)
+  }
+)
+
+fullName$.set('Jane Smith')
+console.log(user$.get()) // { firstName: 'Jane', lastName: 'Smith' }
+```
+
+### Computed from observable parameter
+
+```tsx
+const source$ = useObservable({ count: 5 })
+
+// Pass observable directly instead of function
+const computed$ = useComputed(source$.count)
+
+// Equivalent to:
+const computed$ = useComputed(() => source$.count.get())
+```
+
+## Behavior
+
+### Automatic dependency tracking
+
+Computeds automatically track which observables are accessed during the getter function:
+
+```tsx
+const result$ = useComputed(() => {
+  if (state$.useAlternate.get()) {
+    return state$.alternateValue.get() // Only tracked when useAlternate is true
+  }
+  return state$.primaryValue.get()
+})
+```
+
+### Lazy evaluation
+
+Computed values are only recalculated when:
+1. A tracked observable changes
+2. The computed observable is accessed (`.get()`)
+
+```tsx
+const expensive$ = useComputed(() => {
+  console.log('Computing...')
+  return expensiveCalculation(state$.data.get())
+})
+
+// Nothing logged yet - not computed until accessed
+const value = expensive$.get() // Logs: "Computing..."
+```
+
+### Lifecycle
+
+- Created on component mount
+- Automatically recalculates when dependencies change
+- Cleaned up on component unmount
+- Recreated if `deps` array changes
+
+## Comparison with useObservable
+
+`useComputed` is essentially a shorthand for `useObservable` with a function:
+
+```tsx
+// Using useComputed
+const computed$ = useComputed(() => source$.value.get() * 2)
+
+// Equivalent using useObservable
+const computed$ = useObservable(() => source$.value.get() * 2)
+```
+
+The read-write form uses `linked()` internally:
+
+```tsx
+// Using useComputed
+const computed$ = useComputed(
+  () => source$.get() * 2,
+  (value) => source$.set(value / 2)
+)
+
+// Equivalent using useObservable + linked
+const computed$ = useObservable(
+  linked({
+    get: () => source$.get() * 2,
+    set: ({ value }) => source$.set(value / 2)
+  })
+)
+```
+
+## Type Parameters
+
+<ParamField path="T" type="type">
+  The type of the computed value.
+</ParamField>
+
+<ParamField path="T2" type="type">
+  The type accepted by the setter function. Defaults to `T`.
+</ParamField>
+
+## Notes
+
+- The getter function should be pure (no side effects)
+- For side effects on observable changes, use `useObserve` instead
+- Consider using `useObservable` with a function for new code
+- The setter in linked observables receives an object with a `value` property internally
+
+## Related
+
+- [useObservable](/api/react/use-observable) - Create local observables
+- [useSelector](/api/react/use-selector) - Subscribe to computed values
+- [useObserve](/api/react/use-observe) - Run effects on changes
