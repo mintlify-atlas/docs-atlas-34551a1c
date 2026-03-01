@@ -1,0 +1,203 @@
+{
+  "projectType": "sdk-library",
+  "projectName": "Legend-State",
+  "projectDescription": "A super fast and powerful state library with fine-grained reactivity and automatic persistence",
+  "theme": "palm",
+  "primaryColor": "#8B5CF6",
+  "lightColor": "#A78BFA",
+  "darkColor": "#7C3AED",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "core/observables",
+              "core/getting-and-setting",
+              "core/observing-changes",
+              "core/computed-observables",
+              "core/batching"
+            ]
+          },
+          {
+            "group": "React Integration",
+            "pages": [
+              "react/overview",
+              "react/hooks",
+              "react/observer",
+              "react/reactive-components",
+              "react/fine-grained-rendering"
+            ]
+          },
+          {
+            "group": "Persistence & Sync",
+            "pages": [
+              "sync/overview",
+              "sync/synced",
+              "sync/local-persistence",
+              "sync/remote-sync",
+              "sync/conflict-resolution"
+            ]
+          },
+          {
+            "group": "Advanced Features",
+            "pages": [
+              "advanced/linked-observables",
+              "advanced/middleware",
+              "advanced/when",
+              "advanced/proxy",
+              "advanced/undo-redo"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/react-native",
+              "guides/performance",
+              "guides/typescript",
+              "guides/migration-v3"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Core API",
+            "pages": [
+              "api/observable",
+              "api/observe",
+              "api/computed",
+              "api/batch",
+              "api/when"
+            ]
+          },
+          {
+            "group": "React Hooks",
+            "pages": [
+              "api/react/use-observable",
+              "api/react/use-selector",
+              "api/react/use-observe",
+              "api/react/use-computed",
+              "api/react/observer"
+            ]
+          },
+          {
+            "group": "React Components",
+            "pages": [
+              "api/react/memo",
+              "api/react/show",
+              "api/react/for",
+              "api/react/switch",
+              "api/react/reactive"
+            ]
+          },
+          {
+            "group": "Sync & Persistence",
+            "pages": [
+              "api/sync/synced",
+              "api/sync/sync-observable",
+              "api/sync/configure"
+            ]
+          },
+          {
+            "group": "Persist Plugins",
+            "pages": [
+              "api/persist-plugins/local-storage",
+              "api/persist-plugins/indexeddb",
+              "api/persist-plugins/async-storage",
+              "api/persist-plugins/mmkv"
+            ]
+          },
+          {
+            "group": "Sync Plugins",
+            "pages": [
+              "api/sync-plugins/keel",
+              "api/sync-plugins/supabase",
+              "api/sync-plugins/tanstack-query",
+              "api/sync-plugins/fetch",
+              "api/sync-plugins/firebase"
+            ]
+          },
+          {
+            "group": "Helpers",
+            "pages": [
+              "api/helpers/type-transformers",
+              "api/helpers/track-history",
+              "api/helpers/undo-redo",
+              "api/helpers/time"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "api/config/configure-legend-state",
+              "api/config/enable-react-tracking",
+              "api/config/enable-react-components"
+            ]
+          },
+          {
+            "group": "Trace & Debug",
+            "pages": [
+              "api/trace/use-trace-listeners",
+              "api/trace/use-trace-updates"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Fine-grained reactivity for minimal re-renders",
+    "Super fast performance (4kb bundle size)",
+    "Observable state management with get/set API",
+    "React hooks and components for reactive UIs",
+    "Automatic persistence with local and remote sync",
+    "Type-safe TypeScript support",
+    "Computed observables and linked state",
+    "Batching for optimized updates",
+    "Local-first sync with conflict resolution",
+    "Persistence plugins (localStorage, IndexedDB, AsyncStorage, MMKV)",
+    "Sync plugins (Keel, Supabase, Firebase, TanStack Query)",
+    "React Native support",
+    "Undo/redo functionality",
+    "Middleware system for extending behavior"
+  ],
+  "publicApiSurface": [
+    "observable() - Create observable state",
+    "observe() - React to state changes",
+    "computed() - Derived computed values",
+    "batch() - Batch multiple updates",
+    "when() - Wait for conditions",
+    "useObservable() - React hook for local state",
+    "useSelector() - React hook for derived state",
+    "useObserve() - React hook for side effects",
+    "observer() - HOC for reactive components",
+    "Memo - Reactive memo component",
+    "For - Reactive list rendering",
+    "Show - Conditional rendering",
+    "Switch - Multi-conditional rendering",
+    "Reactive - Reactive props wrapper",
+    "synced() - Create synced observable",
+    "syncObservable() - Sync existing observable",
+    "persistObservable plugins - localStorage, IndexedDB, AsyncStorage, MMKV",
+    "sync plugins - Keel, Supabase, Firebase, TanStack Query, fetch",
+    "linked() - Create linked observables",
+    "proxy() - Create proxy observables",
+    "configureReactive() - Configure reactive components",
+    "enableReactTracking() - Enable automatic React tracking",
+    "trackHistory() - Track state changes",
+    "undoRedo() - Undo/redo functionality"
+  ]
+}
